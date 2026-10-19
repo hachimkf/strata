@@ -145,6 +145,10 @@ final class Library: ObservableObject {
 
     func addFolder(_ url: URL) {
         guard !folders.contains(url) else { return }
+        if Scanner.isSystemPath(url.path) {
+            show("\(url.lastPathComponent) is a system folder: Strata only watches your work folders")
+            return
+        }
         setFolders(folders + [url])
     }
 

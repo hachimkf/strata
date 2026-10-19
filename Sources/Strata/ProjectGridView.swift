@@ -22,6 +22,7 @@ struct ProjectGridView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 header
+                if hero != nil { AccessCard() }
                 if projects.isEmpty && collections.isEmpty {
                     empty
                 } else {

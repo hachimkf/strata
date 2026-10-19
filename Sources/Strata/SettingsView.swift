@@ -94,6 +94,9 @@ private struct GeneralSettings: View {
                 }
                 Toggle("Check for updates automatically (once a day)", isOn: $autoUpdate)
             }
+            SettingsCard(title: "Access", subtitle: "One Full Disk Access switch instead of a prompt per folder.") {
+                AccessCard(alwaysShow: true)
+            }
             SettingsCard(title: "Index health", subtitle: "What Strata could and couldn't read on the last scan.") {
                 IndexHealthView()
                 Button("Scan now") { library.rescan() }.disabled(library.isScanning)

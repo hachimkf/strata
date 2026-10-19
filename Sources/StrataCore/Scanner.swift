@@ -85,9 +85,21 @@ public final class Scanner: @unchecked Sendable {
         "__pycache__", "build", "dist", ".build", "Adobe Premiere Pro Auto-Save", "Media Cache Files",
         "Media Cache", "Peak Files", "Adobe After Effects Auto-Save",
         // App data that lives in Documents but isn't anyone's design work.
+        "Applications", "System", "Public", "Photos Library.photoslibrary", "Music",
         "SoftMaker", "Microsoft User Data", "Zoom", "WhatsApp", "Steam", "Unity", "Blackmagic Design",
         "Native Instruments", "Logic", "GarageBand", "iMovie Library", "Final Cut Backups",
     ]
+
+    /// System locations Strata never reads, even with Full Disk Access or if one is added by mistake.
+    public static let systemPaths: [String] = [
+        "/System", "/Library", "/Applications", "/private", "/usr", "/bin", "/sbin", "/opt", "/cores", "/dev",
+        NSHomeDirectory() + "/Library", NSHomeDirectory() + "/Applications", NSHomeDirectory() + "/.Trash",
+    ]
+
+    public static func isSystemPath(_ path: String) -> Bool {
+        let p = (path as NSString).standardizingPath
+        return p == "/" || systemPaths.contains { p == $0 || p.hasPrefix($0 + "/") }
+    }
 
     static func isCodeProject(_ dir: URL) -> Bool {
         let fm = FileManager.default
@@ -126,7 +138,7 @@ public final class Scanner: @unchecked Sendable {
         var codeProjects = 0
         let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey, .tagNamesKey]
 
-        for root in roots {
+        for root in roots where !Self.isSystemPath(root.path) {
             guard let walker = FileManager.default.enumerator(
                 at: root, includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles, .skipsPackageDescendants],
@@ -138,6 +150,7 @@ public final class Scanner: @unchecked Sendable {
                 guard let v = try? url.resourceValues(forKeys: Set(keys)) else { continue }
                 if v.isDirectory == true {
                     if Self.skippedFolderNames.contains(url.lastPathComponent) || excluded.contains(url.standardizedFileURL.path)
+                        || Self.isSystemPath(url.path)
                         || Self.isCodeProject(url) {
                         if Self.isCodeProject(url) { codeProjects += 1 }
                         walker.skipDescendants()

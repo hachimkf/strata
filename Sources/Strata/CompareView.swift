@@ -82,16 +82,16 @@ struct CompareView: View {
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold))
                     .frame(width: 40, height: 40)
-                    .background(palette.surfaceContainer, in: Circle())
-                    .foregroundStyle(palette.onSurfaceVariant)
+                    .foregroundStyle(palette.onSurface)
+                    .liquidGlass(Circle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             Button(action: done) {
                 Label("Done", systemImage: "checkmark")
                     .font(.system(size: 14, weight: .bold)).fixedSize()
                     .padding(.horizontal, 20).frame(height: 40)
-                    .background(palette.primary, in: Capsule())
                     .foregroundStyle(palette.onPrimary)
+                    .liquidGlass(Capsule(), tint: palette.primary)
             }
             .buttonStyle(PressScale())
             .keyboardShortcut(.cancelAction)
@@ -114,8 +114,7 @@ struct CompareView: View {
             }
         }
         .padding(4)
-        .background(Capsule().fill(palette.surfaceContainer))
-        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.5)))
+        .liquidGlass(Capsule())
     }
 
     private func symbol(_ m: CompareMode) -> String {
@@ -282,8 +281,7 @@ struct CompareView: View {
         }
         .foregroundStyle(palette.onSurface)
         .padding(.horizontal, 16).frame(height: 46)
-        .background(Capsule().fill(palette.surfaceContainer))
-        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.5)))
+        .liquidGlass(Capsule(), interactive: false)
         .animation(Motion.standard, value: mode)
     }
 

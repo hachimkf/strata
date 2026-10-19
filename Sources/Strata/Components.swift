@@ -116,8 +116,18 @@ struct ButtonGroup<Value: Hashable>: View {
     let items: [(value: Value, title: String, symbol: String?)]
     @Binding var selection: Value
     var height: CGFloat = 36
+    /// Glass: one glass capsule holding the segments; only the selected segment is filled.
+    var glass = false
 
     var body: some View {
+        if glass {
+            segments.padding(3).liquidGlass(Capsule())
+        } else {
+            segments
+        }
+    }
+
+    private var segments: some View {
         HStack(spacing: 3) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 let on = item.value == selection
@@ -130,7 +140,7 @@ struct ButtonGroup<Value: Hashable>: View {
                     }
                     .padding(.horizontal, on ? 16 : 12)
                     .frame(height: height)
-                    .background(segmentShape(i, on: on).fill(on ? palette.primary : palette.surfaceContainerHighest))
+                    .background(segmentShape(i, on: on).fill(on ? palette.primary : (glass ? Color.clear : palette.surfaceContainerHighest)))
                     .foregroundStyle(on ? palette.onPrimary : palette.onSurfaceVariant)
                     .contentShape(Rectangle())
                 }
@@ -166,10 +176,10 @@ struct SplitButton<MenuContent: View>: View {
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.leading, 20).padding(.trailing, 14).frame(height: 44)
-                    .background(UnevenRoundedRectangle(topLeadingRadius: 22, bottomLeadingRadius: 22,
-                                                       bottomTrailingRadius: 6, topTrailingRadius: 6, style: .continuous)
-                        .fill(palette.primary))
                     .foregroundStyle(palette.onPrimary)
+                    .liquidGlass(UnevenRoundedRectangle(topLeadingRadius: 22, bottomLeadingRadius: 22,
+                                                        bottomTrailingRadius: 6, topTrailingRadius: 6, style: .continuous),
+                                 tint: palette.primary)
             }
             .buttonStyle(PressScale())
             Menu {
@@ -178,10 +188,10 @@ struct SplitButton<MenuContent: View>: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 12, weight: .heavy))
                     .frame(width: 38, height: 44)
-                    .background(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
-                                                       bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous)
-                        .fill(palette.primary))
                     .foregroundStyle(palette.onPrimary)
+                    .liquidGlass(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
+                                                        bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous),
+                                 tint: palette.primary)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -216,8 +226,8 @@ struct ExtendedFAB: View {
                 }
             }
             .padding(.horizontal, expanded ? 22 : 0).frame(minWidth: compact ? 46 : 56).frame(height: compact ? 46 : 56)
-            .background(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)).fill(palette.tertiaryContainer))
-            .foregroundStyle(palette.onTertiaryContainer)
+            .foregroundStyle(palette.onSurface)
+            .liquidGlass(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)), tint: palette.tertiary.opacity(0.3))
             .shadow(color: .black.opacity(0.18), radius: hovering ? 18 : 10, y: hovering ? 8 : 4)
             .contentShape(Rectangle())
         }
@@ -386,10 +396,8 @@ struct FloatingBack: View {
                 .font(.system(size: 12.5, weight: .bold))
                 .lineLimit(1)
                 .padding(.horizontal, 14).frame(height: 34)
-                .background(.regularMaterial, in: Capsule())
-                .background(palette.surfaceContainerHigh.opacity(hovering ? 0.9 : 0.5), in: Capsule())
-                .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.6), lineWidth: 1))
                 .foregroundStyle(palette.onSurface)
+                .liquidGlass(Capsule())
                 .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
                 .fixedSize()
         }
@@ -397,5 +405,36 @@ struct FloatingBack: View {
         .keyboardShortcut("[", modifiers: .command)
         .onHover { h in withAnimation(Motion.fast) { hovering = h } }
         .help("Back to \(title) (⌘[)")
+    }
+}
+
+// MARK: - Liquid Glass (macOS 26+, frosted material before)
+
+extension View {
+    /// Apple's Liquid Glass in `shape`, optionally tinted (primary actions) and reacting to the pointer.
+    /// On macOS 14–15 it falls back to a frosted material with a hairline edge.
+    @ViewBuilder
+    func liquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = true) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(Glass.regular.tint(tint).interactive(interactive), in: shape)
+        } else {
+            self.background(shape.fill(tint ?? .clear))
+                .background(shape.fill(.regularMaterial))
+                .overlay(shape.stroke(Color.primary.opacity(0.1), lineWidth: 1))
+        }
+    }
+}
+
+/// Neighbouring glass controls merge and morph together (like Finder's toolbar groups).
+struct GlassGroup<Content: View>: View {
+    var spacing: CGFloat = 10
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { content() }
+        } else {
+            content()
+        }
     }
 }

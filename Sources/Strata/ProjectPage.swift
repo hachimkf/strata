@@ -184,9 +184,8 @@ private struct DetailContent: View {
         }
         .buttonStyle(.plain)
         .font(.system(size: 14, weight: .bold))
-        .foregroundStyle(palette.onSurfaceVariant)
-        .background(Capsule().fill(palette.surfaceContainer))
-        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.6)))
+        .foregroundStyle(palette.onSurface)
+        .liquidGlass(Capsule())
     }
 
     private var breadcrumb: some View {
@@ -220,9 +219,10 @@ private struct DetailContent: View {
     }
 
     private func actions(compact: Bool) -> some View {
+        GlassGroup {
         HStack(spacing: 10) {
             ButtonGroup(items: [(ProjectViewMode.preview, "", "photo"), (.timeline, "", "point.3.connected.trianglepath.dotted")],
-                        selection: $mode, height: 38)
+                        selection: $mode, height: 34, glass: true)
                 .help("Preview or zoomable timeline")
             if project.versions.count > 1 {
                 Button { toggleReplay() } label: {
@@ -230,8 +230,8 @@ private struct DetailContent: View {
                         .contentTransition(.symbolEffect(.replace))
                         .font(.system(size: 13, weight: .bold))
                         .frame(width: 40, height: 40)
-                        .background(palette.surfaceContainer, in: Circle())
-                        .foregroundStyle(palette.onSurfaceVariant)
+                        .foregroundStyle(palette.onSurface)
+                        .liquidGlass(Circle())
                 }
                 .buttonStyle(PressScale())
                 .help(playing ? "Stop" : "Replay the history, first version to latest")
@@ -240,8 +240,8 @@ private struct DetailContent: View {
                         .labelStyle(AdaptiveLabel(iconOnly: compact))
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.horizontal, compact ? 0 : 18).frame(minWidth: 42).frame(height: 42)
-                        .overlay(Capsule().stroke(palette.outline, lineWidth: 1))
                         .foregroundStyle(palette.onSurface)
+                        .liquidGlass(Capsule())
                         .contentShape(Capsule())
                 }
                 .buttonStyle(PressScale())
@@ -253,8 +253,8 @@ private struct DetailContent: View {
                         .labelStyle(AdaptiveLabel(iconOnly: compact))
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.horizontal, compact ? 0 : 16).frame(minWidth: 42).frame(height: 42)
-                        .background(palette.tertiaryContainer, in: Capsule())
-                        .foregroundStyle(palette.onTertiaryContainer)
+                        .foregroundStyle(palette.onSurface)
+                        .liquidGlass(Capsule(), tint: palette.tertiary.opacity(0.35))
                 }
                 .buttonStyle(PressScale())
                 .help("Open \(approved.file.name)")
@@ -272,6 +272,7 @@ private struct DetailContent: View {
                 Button("Prepare delivery…") { Delivery.prepare(name: project.name, projects: [project], library: library) }
             }
             .keyboardShortcut(.return, modifiers: .command)
+        }
         }
     }
 
@@ -542,8 +543,7 @@ struct DetailsPanel: View {
         }
         .foregroundStyle(palette.onSurfaceVariant)
         .padding(.horizontal, 14).frame(height: 42)
-        .background(Capsule().fill(palette.surfaceContainer))
-        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.6)))
+        .liquidGlass(Capsule(), interactive: false)
     }
 
     private var header: some View {

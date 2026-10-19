@@ -201,7 +201,7 @@ struct CollectionPage: View {
                         Button { openProject(project) } label: { ProjectCard(project: project, index: i) }
                             .buttonStyle(PressScale())
                             .draggable(project.latest.file.url)
-                            .contextMenu {
+                            .materialContextMenu {
                                 Button("Open Latest Version") { FileActions.open(project.latest.file) }
                                 Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
                                 Divider()
@@ -255,7 +255,7 @@ struct CollectionPage: View {
 
         private var clientActions: some View {
             HStack(spacing: 10) {
-                Menu {
+                MaterialMenu {
                     Button(library.isFavorite(collection) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(collection) }
                     Button("Rename…") { renaming = true }
                     Button("Merge into another client…") { merging = true }
@@ -269,7 +269,7 @@ struct CollectionPage: View {
                         .background(palette.secondaryContainer, in: Circle())
                         .foregroundStyle(palette.onSecondaryContainer)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .fixedSize()
                 if let latest = collection.latest {
                     SplitButton(title: "Open newest", symbol: "arrow.up.forward", action: { FileActions.open(latest) }) {
                         Button("Open \(latest.name)") { FileActions.open(latest) }
@@ -320,7 +320,7 @@ struct FileTile: View {
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { FileActions.open(file) }
         .onTapGesture(perform: preview)
-        .contextMenu {
+        .materialContextMenu {
             Button("Open") { FileActions.open(file) }
             Button("Show in Finder") { FileActions.reveal(file) }
         }

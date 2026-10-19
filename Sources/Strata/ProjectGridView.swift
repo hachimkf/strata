@@ -42,7 +42,7 @@ struct ProjectGridView: View {
                             ForEach(Array(collections.enumerated()), id: \.element.id) { index, collection in
                                 Button { openCollection(collection) } label: { CollectionCard(collection: collection, index: index) }
                                     .buttonStyle(PressScale())
-                                    .contextMenu {
+                                    .materialContextMenu {
                                         if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
                                         Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
                                     }
@@ -64,7 +64,7 @@ struct ProjectGridView: View {
                                 Button { open(project) } label: { ProjectCard(project: project, index: index) }
                                     .buttonStyle(PressScale())
                                     .draggable(project.latest.file.url)
-                                    .contextMenu {
+                                    .materialContextMenu {
                                         Button("Open Latest Version") { FileActions.open(project.latest.file) }
                                         Button("Show Latest in Finder") { FileActions.reveal(project.latest.file) }
                                         Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
@@ -468,7 +468,7 @@ struct LooseFilesView: View {
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { FileActions.open(file) }
                         .onTapGesture { preview = file.url }
-                        .contextMenu {
+                        .materialContextMenu {
                             Button("Open") { FileActions.open(file) }
                             Button("Show in Finder") { FileActions.reveal(file) }
                         }
@@ -513,7 +513,7 @@ struct CollectionListRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .contextMenu {
+        .materialContextMenu {
             if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
             Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
         }
@@ -556,7 +556,7 @@ struct ProjectListRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .draggable(project.latest.file.url)
-        .contextMenu {
+        .materialContextMenu {
             Button("Open Latest Version") { FileActions.open(project.latest.file) }
             Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
         }

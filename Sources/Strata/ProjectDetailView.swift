@@ -248,7 +248,7 @@ struct VersionColumn: View {
             .onHover { h in withAnimation(Motion.fast) { hovering = h } }
             .onTapGesture(count: 2) { open(version) }
             .onTapGesture { select(version) }
-            .contextMenu { VersionMenu(file: version) }
+            .materialContextMenu { VersionMenu(file: version) }
             .help(version.file.path)
             .animation(Motion.standard, value: isSelected)
     }
@@ -289,7 +289,7 @@ struct VersionColumn: View {
                     .onTapGesture(count: 2) { open(export) }
                     .onTapGesture { select(export) }
                     .help("\(export.file.name) · \(Format.full.string(from: export.file.modified))")
-                    .contextMenu { VersionMenu(file: export) }
+                    .materialContextMenu { VersionMenu(file: export) }
                 }
                 if exports.count > 4 {
                     Text("+\(exports.count - 4) more exports")
@@ -470,7 +470,7 @@ struct VersionMenu: View {
         Button("Open") { FileActions.open(file.file) }
         Button("Show in Finder") { FileActions.reveal(file.file) }
         if !file.isExport { Button("Compare with the version before") { actions.compare(file) } }
-        Menu("Status") {
+        MaterialMenu("Status") {
             ForEach(VersionStatus.allCases, id: \.self) { s in
                 Button { library.setStatus(s, for: file.file) } label: {
                     if file.file.status == s { Label(s.rawValue, systemImage: "checkmark") } else { Text(s.rawValue) }

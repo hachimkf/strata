@@ -156,7 +156,7 @@ private struct RecentCard: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
-        .contextMenu {
+        .materialContextMenu {
             Button("Open in \(recent.app.rawValue)") { RecentsStore.open(recent) }
             Button("Show in Finder") { FileActions.reveal(path: recent.path) }
         }

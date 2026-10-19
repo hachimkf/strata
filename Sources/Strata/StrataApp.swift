@@ -42,6 +42,7 @@ struct StrataApp: App {
 
         MenuBarExtra {
             MenuBarPanel()
+                .materialMenuHost()
                 .environmentObject(library)
                 .environmentObject(quickFind)
                 .themed(Prefs.accent(accent))

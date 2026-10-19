@@ -151,7 +151,7 @@ struct TidyView: View {
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(Motion.fast) { if on { chosen.remove(c.id) } else { chosen.insert(c.id) } } }
         .help("\(c.project.name) · \(c.keep)")
-        .contextMenu {
+        .materialContextMenu {
             Button("Show copy in Finder") { FileActions.reveal(c.file) }
             Button("Show kept file in Finder") { FileActions.reveal(path: c.keepPath) }
             Button("Quick Look") { preview = c.file.url }

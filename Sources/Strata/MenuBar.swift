@@ -213,7 +213,7 @@ struct MenuBarPanel: View {
         }
         .buttonStyle(MenuRowStyle())
         .help("Open \(r.file.name)")
-        .contextMenu { Button("Show in Finder") { FileActions.reveal(r.file) } }
+        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(r.file) } }
     }
 
     private func fileRow(_ f: CreativeFile, subtitle: String, warning: Bool) -> some View {
@@ -239,7 +239,7 @@ struct MenuBarPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(MenuRowStyle())
-        .contextMenu { Button("Show in Finder") { FileActions.reveal(f) } }
+        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(f) } }
     }
 
     private func recentRow(_ r: RecentFile) -> some View {
@@ -263,7 +263,7 @@ struct MenuBarPanel: View {
         }
         .buttonStyle(MenuRowStyle())
         .help("Open in \(r.app.rawValue)")
-        .contextMenu { Button("Show in Finder") { FileActions.reveal(path: r.path) } }
+        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(path: r.path) } }
     }
 
     private var footer: some View {

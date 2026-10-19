@@ -200,7 +200,7 @@ private struct DetailContent: View {
                 Text("/").foregroundStyle(palette.outline)
             }
             Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1)
-            Menu {
+            MaterialMenu {
                 Button(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
                 Button("Rename project…") { renaming = true }
                 if let client {
@@ -212,7 +212,7 @@ private struct DetailContent: View {
             } label: {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             .help("Project options")
         }
         .lineLimit(1)
@@ -435,10 +435,10 @@ private struct FilmCard: View {
                         .foregroundStyle(palette.onSurfaceVariant)
                 }
                 Spacer(minLength: 0)
-                Menu { VersionMenu(file: file) } label: {
+                MaterialMenu { VersionMenu(file: file) } label: {
                     Image(systemName: "ellipsis").font(.system(size: 12, weight: .bold)).frame(width: 22, height: 18)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .fixedSize()
                 .foregroundStyle(palette.onSurfaceVariant)
             }
         }
@@ -447,7 +447,7 @@ private struct FilmCard: View {
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(hovering || selected ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
         .contentShape(Rectangle())
         .onHover { h in withAnimation(Motion.fast) { hovering = h } }
-        .contextMenu { VersionMenu(file: file) }
+        .materialContextMenu { VersionMenu(file: file) }
         .help(file.file.path)
     }
 
@@ -556,10 +556,10 @@ struct DetailsPanel: View {
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                     Spacer(minLength: 4)
-                    Menu { VersionMenu(file: file) } label: {
+                    MaterialMenu { VersionMenu(file: file) } label: {
                         Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).frame(width: 24, height: 20)
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .fixedSize()
                     .foregroundStyle(palette.onSurfaceVariant)
                 }
                 Text("\(file.file.kind.label) · \(Format.size(file.file.size))")
@@ -571,7 +571,7 @@ struct DetailsPanel: View {
 
     private var statusMenu: some View {
         let status = file.file.status
-        return Menu {
+        return MaterialMenu {
             ForEach(VersionStatus.allCases, id: \.self) { s in
                 Button { library.setStatus(s, for: file.file) } label: {
                     if status == s { Label(s.rawValue, systemImage: "checkmark") } else { Text(s.rawValue) }
@@ -589,7 +589,7 @@ struct DetailsPanel: View {
             .background(Capsule().fill(StatusColor.of(status, palette, scheme).opacity(0.12)))
             .foregroundStyle(palette.onSurface)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .fixedSize()
         .help("Saved as a Finder tag")
     }
 
@@ -758,7 +758,7 @@ private struct TimelineEntry: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: select)
-        .contextMenu { VersionMenu(file: version) }
+        .materialContextMenu { VersionMenu(file: version) }
     }
 }
 

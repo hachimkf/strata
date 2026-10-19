@@ -182,7 +182,7 @@ struct SplitButton<MenuContent: View>: View {
                                  tint: palette.primary)
             }
             .buttonStyle(PressScale())
-            Menu {
+            MaterialMenu {
                 menu()
             } label: {
                 Image(systemName: "chevron.down")
@@ -193,8 +193,6 @@ struct SplitButton<MenuContent: View>: View {
                                                         bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous),
                                  tint: palette.primary)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .fixedSize()
         }
     }
@@ -227,7 +225,7 @@ struct ExtendedFAB: View {
             }
             .padding(.horizontal, expanded ? 22 : 0).frame(minWidth: compact ? 46 : 56).frame(height: compact ? 46 : 56)
             .foregroundStyle(palette.onSurface)
-            .tonalSurface(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)), tint: palette.tertiary.opacity(0.3))
+            .modifier(SearchSurface(radius: compact ? 23 : (hovering ? 28 : 18)))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScale())
@@ -415,7 +413,9 @@ private struct TonalSurface<S: Shape>: ViewModifier {
     let tint: Color?
 
     func body(content: Content) -> some View {
-        content.background(shape.fill(tint ?? palette.surfaceContainerHigh))
+        content
+            .background(shape.fill(tint ?? palette.surfaceContainerHigh))
+            .background(shape.fill(palette.surfaceContainerHigh))
     }
 }
 
@@ -423,5 +423,21 @@ extension View {
     /// A quiet control surface; press and shape animations provide the interaction feedback.
     func tonalSurface<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
         modifier(TonalSurface(shape: shape, tint: tint))
+    }
+}
+
+/// Heavy frosting plus a neutral tint keeps artwork from competing with search text.
+struct SearchSurface: ViewModifier {
+    @Environment(\.palette) private var palette
+    var radius: CGFloat = 18
+    func body(content: Content) -> some View {
+        content.background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(.thickMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(palette.surfaceContainerHigh.opacity(0.92))
+                }
+        }
     }
 }

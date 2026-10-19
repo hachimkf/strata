@@ -75,7 +75,7 @@ struct CompareView: View {
             }
             Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1).truncationMode(.middle)
             Spacer()
-            Menu {
+            MaterialMenu {
                 Button("Swap A and B") { swap(&leftID, &rightID) }
                 Button("Open A: \(left.file.name)") { FileActions.open(left.file) }
                 Button("Open B: \(right.file.name)") { FileActions.open(right.file) }
@@ -85,7 +85,7 @@ struct CompareView: View {
                     .foregroundStyle(palette.onSurface)
                     .tonalSurface(Circle())
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             Button(action: done) {
                 Label("Done", systemImage: "checkmark")
                     .font(.system(size: 14, weight: .bold)).fixedSize()
@@ -213,10 +213,10 @@ struct CompareView: View {
                 Text("Active").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(palette.primary)
                     .fixedSize()
             }
-            Menu { VersionMenu(file: f) } label: {
+            MaterialMenu { VersionMenu(file: f) } label: {
                 Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).frame(width: 26, height: 22)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .fixedSize()
             .foregroundStyle(palette.onSurfaceVariant)
         }
         .padding(.horizontal, 6).padding(.top, 2)

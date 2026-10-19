@@ -63,8 +63,9 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .materialMenuHost()
         .themed(Prefs.accent(accent))
-        .searchable(text: $search, placement: .toolbar, prompt: "Search everything")
+        .toolbarBackground(.visible, for: .windowToolbar)
         .onChange(of: selection) { old, new in
             if new.isList { lastList = new }
             // Browser-style history: every move is recorded unless it *is* a back / forward step.
@@ -80,6 +81,21 @@ struct ContentView: View {
             if let item = quickFind.pending { go(item); quickFind.pending = nil }
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search everything", text: $search)
+                        .textFieldStyle(.plain).font(.system(size: 13))
+                        .accessibilityLabel("Search everything")
+                    if !search.isEmpty {
+                        Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                            .buttonStyle(.plain).help("Clear search")
+                    }
+                }
+                .padding(.horizontal, 14).frame(width: 280, height: 36)
+                .modifier(SearchSurface())
+                .themed(Prefs.accent(accent))
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { library.rescan() } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
@@ -226,6 +242,7 @@ struct Sidebar: View {
     @Environment(\.palette) private var palette
     @Binding var selection: SidebarItem
     @ViewState private var filter = ""
+    @AppStorage("clientsAlphabetical") private var clientsAZ = false
     @ViewState private var expanded: Set<String> = []
     @ViewState private var renamingClient: Client?
     @ViewState private var renamingProject: ProjectGroup?
@@ -251,7 +268,7 @@ struct Sidebar: View {
                     Section("Watching") {
                         ForEach(library.folders, id: \.self) { url in
                             row(.folder(url), url.lastPathComponent, "folder.fill", library.projectCount(in: url))
-                                .contextMenu {
+                                .materialContextMenu {
                                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                                     Button("Stop Watching", role: .destructive) { library.removeFolder(url) }
                                 }
@@ -266,29 +283,29 @@ struct Sidebar: View {
                         Section("Favorites") {
                             ForEach(library.favoriteClients) { c in
                                 clientLabel(c).tag(SidebarItem.collection(c.id))
-                                    .contextMenu { Button("Remove from Favorites") { library.toggleFavorite(c) } }
+                                    .materialContextMenu { Button("Remove from Favorites") { library.toggleFavorite(c) } }
                             }
                             ForEach(library.favoriteProjects) { p in
                                 projectLabel(p, small: false).tag(SidebarItem.project(p.id))
-                                    .contextMenu { Button("Remove from Favorites") { library.toggleFavorite(p) } }
+                                    .materialContextMenu { Button("Remove from Favorites") { library.toggleFavorite(p) } }
                             }
                         }
                     }
-                    Section("Clients") {
+                    Section {
                         ForEach(clients) { client in
                             DisclosureGroup(isExpanded: expansion(client)) {
                                 ForEach(projects(of: client)) { project in
                                     projectLabel(project, small: true)
                                         .tag(SidebarItem.project(project.id))
                                         .id(project.id)
-                                        .contextMenu { projectMenu(project) }
+                                        .materialContextMenu { projectMenu(project) }
                                         .dropDestination(for: URL.self) { urls, _ in drop(urls, onProject: project) }
                                 }
                             } label: {
                                 clientLabel(client)
                                     .tag(SidebarItem.collection(client.id))
                                     .id(client.id)
-                                    .contextMenu {
+                                    .materialContextMenu {
                                         Button(library.isFavorite(client) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(client) }
                                         Button("Rename…") { renamingClient = client }
                                         Button("Merge into another client…") { mergingClient = client }
@@ -299,6 +316,22 @@ struct Sidebar: View {
                                     .dropDestination(for: URL.self) { urls, _ in drop(urls, onClient: client) }
                             }
                         }
+                    } header: {
+                        HStack {
+                            Text("Clients")
+                            Spacer()
+                            Button {
+                                clientsAZ.toggle()
+                            } label: {
+                                Image(systemName: "textformat.abc")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .frame(width: 24, height: 18)
+                                    .background(Capsule().fill(clientsAZ ? palette.primary.opacity(0.25) : .clear))
+                                    .foregroundStyle(clientsAZ ? palette.primary : palette.onSurfaceVariant)
+                            }
+                            .buttonStyle(.plain)
+                            .help(clientsAZ ? "Sorted A–Z · click for most recent first" : "Sorted by most recent · click to sort A–Z")
+                        }
                     }
 
                     if !standalone.isEmpty {
@@ -307,7 +340,7 @@ struct Sidebar: View {
                                 projectLabel(project, small: false)
                                     .tag(SidebarItem.project(project.id))
                                     .id(project.id)
-                                    .contextMenu { projectMenu(project) }
+                                    .materialContextMenu { projectMenu(project) }
                                     .dropDestination(for: URL.self) { urls, _ in drop(urls, onProject: project) }
                             }
                         }
@@ -362,8 +395,12 @@ struct Sidebar: View {
     private var query: String { filter.trimmingCharacters(in: .whitespaces).lowercased() }
 
     private var clients: [Client] {
-        guard !query.isEmpty else { return library.collections }
-        return library.collections.filter { c in c.name.lowercased().contains(query) || c.projects.contains { $0.name.lowercased().contains(query) } }
+        var list = library.collections
+        if !query.isEmpty {
+            list = list.filter { c in c.name.lowercased().contains(query) || c.projects.contains { $0.name.lowercased().contains(query) } }
+        }
+        if clientsAZ { list.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+        return list
     }
 
     private func projects(of c: Client) -> [ProjectGroup] {

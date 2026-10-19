@@ -185,7 +185,7 @@ private struct DetailContent: View {
         .buttonStyle(.plain)
         .font(.system(size: 14, weight: .bold))
         .foregroundStyle(palette.onSurface)
-        .liquidGlass(Capsule())
+        .tonalSurface(Capsule())
     }
 
     private var breadcrumb: some View {
@@ -219,10 +219,9 @@ private struct DetailContent: View {
     }
 
     private func actions(compact: Bool) -> some View {
-        GlassGroup {
         HStack(spacing: 10) {
             ButtonGroup(items: [(ProjectViewMode.preview, "", "photo"), (.timeline, "", "point.3.connected.trianglepath.dotted")],
-                        selection: $mode, height: 34, glass: true)
+                        selection: $mode, height: 34, grouped: true)
                 .help("Preview or zoomable timeline")
             if project.versions.count > 1 {
                 Button { toggleReplay() } label: {
@@ -231,7 +230,7 @@ private struct DetailContent: View {
                         .font(.system(size: 13, weight: .bold))
                         .frame(width: 40, height: 40)
                         .foregroundStyle(palette.onSurface)
-                        .liquidGlass(Circle())
+                        .tonalSurface(Circle())
                 }
                 .buttonStyle(PressScale())
                 .help(playing ? "Stop" : "Replay the history, first version to latest")
@@ -241,7 +240,7 @@ private struct DetailContent: View {
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.horizontal, compact ? 0 : 18).frame(minWidth: 42).frame(height: 42)
                         .foregroundStyle(palette.onSurface)
-                        .liquidGlass(Capsule())
+                        .tonalSurface(Capsule())
                         .contentShape(Capsule())
                 }
                 .buttonStyle(PressScale())
@@ -254,7 +253,7 @@ private struct DetailContent: View {
                         .font(.system(size: 14, weight: .semibold))
                         .padding(.horizontal, compact ? 0 : 16).frame(minWidth: 42).frame(height: 42)
                         .foregroundStyle(palette.onSurface)
-                        .liquidGlass(Capsule(), tint: palette.tertiary.opacity(0.35))
+                        .tonalSurface(Capsule(), tint: palette.tertiary.opacity(0.35))
                 }
                 .buttonStyle(PressScale())
                 .help("Open \(approved.file.name)")
@@ -272,7 +271,6 @@ private struct DetailContent: View {
                 Button("Prepare delivery…") { Delivery.prepare(name: project.name, projects: [project], library: library) }
             }
             .keyboardShortcut(.return, modifiers: .command)
-        }
         }
     }
 
@@ -346,7 +344,6 @@ struct LargePreview: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous).fill(palette.surfaceContainerLow)
             if let image {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-                    .padding(6)
                     .transition(.opacity)
                     .id(file.id)
             } else {
@@ -354,7 +351,6 @@ struct LargePreview: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(palette.outlineVariant.opacity(0.5)))
         .overlay(alignment: .topLeading) {
             if let version {
                 Text("v\(version)").font(.system(size: 12, weight: .heavy))
@@ -421,7 +417,11 @@ private struct FilmCard: View {
                 .overlay(Thumbnail(file: file.file, side: 360))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(alignment: .topLeading) {
-                    Text("v\(number)").font(.system(size: 10.5, weight: .heavy))
+                    HStack(spacing: 4) {
+                        if selected { Image(systemName: "checkmark") }
+                        Text("v\(number)")
+                    }
+                        .font(.system(size: 10.5, weight: .heavy))
                         .padding(.horizontal, 7).frame(height: 20)
                         .background(selected ? palette.primary : Color.black.opacity(0.55), in: Capsule())
                         .foregroundStyle(selected ? palette.onPrimary : .white)
@@ -445,8 +445,6 @@ private struct FilmCard: View {
         .padding(8)
         .frame(width: 210)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(hovering || selected ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(selected ? palette.primary : palette.outlineVariant.opacity(0.5), lineWidth: selected ? 2 : 1))
         .contentShape(Rectangle())
         .onHover { h in withAnimation(Motion.fast) { hovering = h } }
         .contextMenu { VersionMenu(file: file) }
@@ -543,7 +541,7 @@ struct DetailsPanel: View {
         }
         .foregroundStyle(palette.onSurfaceVariant)
         .padding(.horizontal, 14).frame(height: 42)
-        .liquidGlass(Capsule(), interactive: false)
+        .tonalSurface(Capsule())
     }
 
     private var header: some View {
@@ -588,7 +586,7 @@ struct DetailsPanel: View {
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
             }
             .padding(.horizontal, 12).frame(height: 30)
-            .overlay(Capsule().stroke(StatusColor.of(status, palette, scheme).opacity(status == nil ? 0.4 : 0.9), lineWidth: 1.5))
+            .background(Capsule().fill(StatusColor.of(status, palette, scheme).opacity(0.12)))
             .foregroundStyle(palette.onSurface)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -655,12 +653,12 @@ struct DetailsPanel: View {
                         .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                     Text(done ? (status == .approved ? "Approved · mark v\(number) as Final" : "v\(number) is Final · clear") : "Approve version v\(number)")
                         .font(.system(size: 14, weight: .semibold)).foregroundStyle(palette.onSurface)
-                    Spacer()
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
                 }
-                .padding(.horizontal, 12).frame(height: 54)
+                .padding(12).frame(minHeight: 54)
                 .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.surfaceContainer))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(StatusColor.approved(palette, scheme).opacity(0.5)))
                 .contentShape(Rectangle())
             }
             .buttonStyle(PressScale())

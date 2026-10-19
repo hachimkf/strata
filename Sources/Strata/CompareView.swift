@@ -70,10 +70,10 @@ struct CompareView: View {
         HStack(spacing: 10) {
             Image(systemName: "folder").foregroundStyle(palette.onSurfaceVariant)
             if let client {
-                Text(client.name).font(.system(size: 17, weight: .medium)).foregroundStyle(palette.onSurfaceVariant)
+                Text(client.name).font(.system(size: 15, weight: .medium)).foregroundStyle(palette.onSurfaceVariant).lineLimit(1).truncationMode(.middle)
                 Text("/").foregroundStyle(palette.outline)
             }
-            Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1)
+            Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1).truncationMode(.middle)
             Spacer()
             Menu {
                 Button("Swap A and B") { swap(&leftID, &rightID) }
@@ -83,7 +83,7 @@ struct CompareView: View {
                 Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold))
                     .frame(width: 40, height: 40)
                     .foregroundStyle(palette.onSurface)
-                    .liquidGlass(Circle())
+                    .tonalSurface(Circle())
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
             Button(action: done) {
@@ -91,7 +91,7 @@ struct CompareView: View {
                     .font(.system(size: 14, weight: .bold)).fixedSize()
                     .padding(.horizontal, 20).frame(height: 40)
                     .foregroundStyle(palette.onPrimary)
-                    .liquidGlass(Capsule(), tint: palette.primary)
+                    .tonalSurface(Capsule(), tint: palette.primary)
             }
             .buttonStyle(PressScale())
             .keyboardShortcut(.cancelAction)
@@ -99,11 +99,19 @@ struct CompareView: View {
     }
 
     private var modeBar: some View {
+        ViewThatFits(in: .horizontal) {
+            modes(compact: false)
+            modes(compact: true)
+        }
+    }
+
+    private func modes(compact: Bool) -> some View {
         HStack(spacing: 4) {
             ForEach(CompareMode.allCases, id: \.self) { m in
                 let on = m == mode
                 Button { withAnimation(Motion.fast) { mode = m } } label: {
                     Label(m.rawValue, systemImage: symbol(m))
+                        .labelStyle(AdaptiveLabel(iconOnly: compact))
                         .font(.system(size: 13.5, weight: on ? .bold : .medium)).fixedSize()
                         .padding(.horizontal, 16).frame(height: 38)
                         .background(Capsule().fill(on ? palette.primary : .clear))
@@ -111,10 +119,13 @@ struct CompareView: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(PressScale())
+                .help(m.rawValue)
+                .accessibilityLabel(m.rawValue)
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
         .padding(4)
-        .liquidGlass(Capsule())
+        .tonalSurface(Capsule())
     }
 
     private func symbol(_ m: CompareMode) -> String {
@@ -174,7 +185,6 @@ struct CompareView: View {
     /// One version in its own panel (side by side). Clicking it makes it the one the filmstrip changes.
     private func panel(_ side: Side) -> some View {
         let f = side == .left ? left : right
-        let on = active == side
         return VStack(spacing: 8) {
             panelHeader(side, f)
             zoomed(side == .left ? leftImage : rightImage, side)
@@ -182,8 +192,6 @@ struct CompareView: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .stroke(on ? palette.primary : palette.outlineVariant.opacity(0.5), lineWidth: on ? 2 : 1))
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { withAnimation(Motion.fast) { active = side } })
     }
@@ -193,14 +201,18 @@ struct CompareView: View {
         return HStack(spacing: 10) {
             Text(side == .left ? "A" : "B").font(.system(size: 13, weight: .heavy))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(on ? palette.primaryContainer : palette.surfaceContainerHighest))
-                .foregroundStyle(on ? palette.onPrimaryContainer : palette.onSurfaceVariant)
+                .background(Circle().fill(on ? palette.primary : palette.surfaceContainerHighest))
+                .foregroundStyle(on ? palette.onPrimary : palette.onSurfaceVariant)
             VStack(alignment: .leading, spacing: 1) {
-                Text(f.file.name).font(.system(size: 13.5, weight: .bold)).foregroundStyle(palette.onSurface).lineLimit(1)
+                Text(f.file.name).font(.system(size: 13.5, weight: .bold)).foregroundStyle(palette.onSurface).lineLimit(1).truncationMode(.middle)
                 Text([side == .left ? dimsA : dimsB, Format.size(f.file.size), "v\(number(f))"].compactMap { $0 }.joined(separator: "  ·  "))
                     .font(.system(size: 11.5, weight: .medium)).foregroundStyle(palette.onSurfaceVariant).lineLimit(1)
             }
-            Spacer()
+            Spacer(minLength: 0)
+            if on {
+                Text("Active").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(palette.primary)
+                    .fixedSize()
+            }
             Menu { VersionMenu(file: f) } label: {
                 Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).frame(width: 26, height: 22)
             }
@@ -220,14 +232,13 @@ struct CompareView: View {
         }
         .padding(8)
         .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.outlineVariant.opacity(0.5)))
     }
 
     /// An image with this side's zoom and pan (shared with the other side when Link zoom is on).
     private func zoomed(_ image: NSImage?, _ side: Side) -> some View {
         let z = zoom(side), p = pan(side)
         return ZStack {
-            Rectangle().fill(palette.surfaceContainerHighest)
+            Rectangle().fill(palette.surfaceDim)
             if let image {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
                     .scaleEffect(z).offset(p)
@@ -281,7 +292,7 @@ struct CompareView: View {
         }
         .foregroundStyle(palette.onSurface)
         .padding(.horizontal, 16).frame(height: 46)
-        .liquidGlass(Capsule(), interactive: false)
+        .tonalSurface(Capsule())
         .animation(Motion.standard, value: mode)
     }
 
@@ -329,12 +340,10 @@ struct CompareView: View {
                 Thumbnail(file: v.file, side: 240)
                     .frame(width: 168, height: 96)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(chosen ? palette.primary : .clear, lineWidth: 2.5))
                     .overlay(alignment: .topTrailing) {
                         if chosen {
-                            Text(isA ? "A" : "B").font(.system(size: 10.5, weight: .heavy))
-                                .frame(width: 20, height: 20).background(palette.primary, in: Circle())
+                            Text(isA && isB ? "A · B" : (isA ? "A" : "B")).font(.system(size: 10.5, weight: .heavy))
+                                .padding(.horizontal, 6).frame(minWidth: 20).frame(height: 20).background(palette.primary, in: Capsule())
                                 .foregroundStyle(palette.onPrimary).padding(6)
                         }
                     }
@@ -349,8 +358,12 @@ struct CompareView: View {
                 .frame(width: 168, alignment: .leading)
                 Text(Format.full.string(from: v.file.modified)).font(.system(size: 10.5)).foregroundStyle(palette.onSurfaceVariant)
             }
+            .padding(6)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(chosen ? palette.surfaceContainerHigh : .clear))
         }
         .buttonStyle(PressScale())
+        .accessibilityAddTraits(chosen ? .isSelected : [])
         .help(v.file.name)
     }
 }

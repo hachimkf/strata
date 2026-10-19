@@ -208,7 +208,6 @@ private struct Swatch: View {
                 MorphShape(from: .softSquare, to: .cookie9, progress: hovering ? 1 : 0)
                     .fill(color.color)
                     .frame(width: big ? 74 : 58, height: big ? 74 : 58)
-                    .shadow(color: color.color.opacity(0.4), radius: hovering ? 12 : 4, y: 4)
                 Text(color.hex).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(palette.onSurface)
             }
         }

@@ -116,12 +116,12 @@ struct ButtonGroup<Value: Hashable>: View {
     let items: [(value: Value, title: String, symbol: String?)]
     @Binding var selection: Value
     var height: CGFloat = 36
-    /// Glass: one glass capsule holding the segments; only the selected segment is filled.
-    var glass = false
+    /// One tonal capsule holding the segments; only the selected segment is filled.
+    var grouped = false
 
     var body: some View {
-        if glass {
-            segments.padding(3).liquidGlass(Capsule())
+        if grouped {
+            segments.padding(3).tonalSurface(Capsule())
         } else {
             segments
         }
@@ -140,7 +140,7 @@ struct ButtonGroup<Value: Hashable>: View {
                     }
                     .padding(.horizontal, on ? 16 : 12)
                     .frame(height: height)
-                    .background(segmentShape(i, on: on).fill(on ? palette.primary : (glass ? Color.clear : palette.surfaceContainerHighest)))
+                    .background(segmentShape(i, on: on).fill(on ? palette.primary : (grouped ? Color.clear : palette.surfaceContainerHighest)))
                     .foregroundStyle(on ? palette.onPrimary : palette.onSurfaceVariant)
                     .contentShape(Rectangle())
                 }
@@ -177,7 +177,7 @@ struct SplitButton<MenuContent: View>: View {
                     .fixedSize()
                     .padding(.leading, 20).padding(.trailing, 14).frame(height: 44)
                     .foregroundStyle(palette.onPrimary)
-                    .liquidGlass(UnevenRoundedRectangle(topLeadingRadius: 22, bottomLeadingRadius: 22,
+                    .tonalSurface(UnevenRoundedRectangle(topLeadingRadius: 22, bottomLeadingRadius: 22,
                                                         bottomTrailingRadius: 6, topTrailingRadius: 6, style: .continuous),
                                  tint: palette.primary)
             }
@@ -189,7 +189,7 @@ struct SplitButton<MenuContent: View>: View {
                     .font(.system(size: 12, weight: .heavy))
                     .frame(width: 38, height: 44)
                     .foregroundStyle(palette.onPrimary)
-                    .liquidGlass(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
+                    .tonalSurface(UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 6,
                                                         bottomTrailingRadius: 22, topTrailingRadius: 22, style: .continuous),
                                  tint: palette.primary)
             }
@@ -227,8 +227,7 @@ struct ExtendedFAB: View {
             }
             .padding(.horizontal, expanded ? 22 : 0).frame(minWidth: compact ? 46 : 56).frame(height: compact ? 46 : 56)
             .foregroundStyle(palette.onSurface)
-            .liquidGlass(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)), tint: palette.tertiary.opacity(0.3))
-            .shadow(color: .black.opacity(0.18), radius: hovering ? 18 : 10, y: hovering ? 8 : 4)
+            .tonalSurface(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)), tint: palette.tertiary.opacity(0.3))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScale())
@@ -397,7 +396,7 @@ struct FloatingBack: View {
                 .lineLimit(1)
                 .padding(.horizontal, 14).frame(height: 34)
                 .foregroundStyle(palette.onSurface)
-                .liquidGlass(Capsule())
+                .tonalSurface(Capsule())
                 .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
                 .fixedSize()
         }
@@ -408,33 +407,21 @@ struct FloatingBack: View {
     }
 }
 
-// MARK: - Liquid Glass (macOS 26+, frosted material before)
+// MARK: - Tonal controls
 
-extension View {
-    /// Apple's Liquid Glass in `shape`, optionally tinted (primary actions) and reacting to the pointer.
-    /// On macOS 14–15 it falls back to a frosted material with a hairline edge.
-    @ViewBuilder
-    func liquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = true) -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(Glass.regular.tint(tint).interactive(interactive), in: shape)
-        } else {
-            self.background(shape.fill(tint ?? .clear))
-                .background(shape.fill(.regularMaterial))
-                .overlay(shape.stroke(Color.primary.opacity(0.1), lineWidth: 1))
-        }
+private struct TonalSurface<S: Shape>: ViewModifier {
+    @Environment(\.palette) private var palette
+    let shape: S
+    let tint: Color?
+
+    func body(content: Content) -> some View {
+        content.background(shape.fill(tint ?? palette.surfaceContainerHigh))
     }
 }
 
-/// Neighbouring glass controls merge and morph together (like Finder's toolbar groups).
-struct GlassGroup<Content: View>: View {
-    var spacing: CGFloat = 10
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) { content() }
-        } else {
-            content()
-        }
+extension View {
+    /// A quiet control surface; press and shape animations provide the interaction feedback.
+    func tonalSurface<S: Shape>(_ shape: S, tint: Color? = nil) -> some View {
+        modifier(TonalSurface(shape: shape, tint: tint))
     }
 }

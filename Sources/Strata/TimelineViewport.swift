@@ -197,7 +197,7 @@ struct TimelineViewport: View {
             }
         }
         .padding(.horizontal, 10).frame(height: 48)
-        .liquidGlass(Capsule(), interactive: false)
+        .tonalSurface(Capsule())
     }
 
     private func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {

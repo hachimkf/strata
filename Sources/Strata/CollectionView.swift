@@ -79,8 +79,6 @@ struct CollectionCard: View {
             }
             .padding(8)
             .background(MorphRect(radius: hovering ? 28 : 22).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
-            .overlay(MorphRect(radius: hovering ? 28 : 22).stroke(hovering ? palette.primary.opacity(0.6) : palette.outlineVariant.opacity(0.5), lineWidth: hovering ? 2 : 1))
-            .shadow(color: palette.primary.opacity(hovering ? 0.25 : 0), radius: 14, y: 8)
             .contentShape(MorphRect(radius: 22))
         }
     }
@@ -238,7 +236,6 @@ struct CollectionPage: View {
         private var clientTitle: some View {
             HStack(alignment: .bottom, spacing: 18) {
                 ShapeAvatar(file: collection.latest, name: collection.name, size: 92)
-                    .shadow(color: palette.primary.opacity(0.35), radius: 16, y: 8)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("CLIENT  ·  \(collection.projects.count) PROJECTS  ·  \(collection.fileCount) FILES")
                         .font(.system(size: 11.5, weight: .heavy)).tracking(1.2)

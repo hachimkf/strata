@@ -221,8 +221,6 @@ struct ProjectCard: View {
             }
             .padding(8)
             .background(MorphRect(radius: hovering ? 28 : 22).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
-            .overlay(MorphRect(radius: hovering ? 28 : 22).stroke(hovering ? palette.primary.opacity(0.6) : palette.outlineVariant.opacity(0.5), lineWidth: hovering ? 2 : 1))
-            .shadow(color: palette.primary.opacity(hovering ? 0.22 : 0), radius: 14, y: 8)
             .contentShape(MorphRect(radius: 22))
         }
 

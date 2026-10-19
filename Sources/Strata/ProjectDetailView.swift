@@ -236,16 +236,12 @@ struct VersionColumn: View {
 
     private var cardSurface: some View {
         let fill: Color = isSelected ? palette.primaryContainer : palette.surfaceContainerLow
-        let edge: Color = isSelected ? palette.primary : palette.outlineVariant.opacity(0.7)
         return cardContent
             .background(MorphRect(radius: radius).fill(fill))
-            .overlay(MorphRect(radius: radius).stroke(edge, lineWidth: isSelected ? 2.5 : 1))
     }
 
     private var card: some View {
-        let lifted = hovering || isSelected
         return cardSurface
-            .shadow(color: palette.primary.opacity(lifted ? 0.22 : 0), radius: 16, y: 8)
             .offset(y: hovering ? -6 : 0)
             .scaleEffect(hovering ? 1.03 : 1)
             .contentShape(Rectangle())
@@ -305,28 +301,22 @@ struct VersionColumn: View {
     }
 }
 
-/// The marker on the river. Latest spins and glows; the selection morphs into a cookie.
+/// The marker on the river. Latest rotates; the selection morphs into a cookie.
 struct NodeDot: View {
     enum Kind { case origin, latest, recovered, regular }
     @Environment(\.palette) private var palette
     let kind: Kind
     let selected: Bool
     @ViewState private var spin = false
-    @ViewState private var pulse = false
 
     var body: some View {
         ZStack {
             switch kind {
             case .latest:
-                Circle().fill(palette.primary.opacity(0.25))
-                    .frame(width: 30, height: 30)
-                    .scaleEffect(pulse ? 1.9 : 1)
-                    .opacity(pulse ? 0 : 0.9)
                 Cookie(lobes: 9, depth: 0.2)
                     .fill(palette.primary)
                     .frame(width: 28, height: 28)
                     .rotationEffect(.degrees(spin ? 360 : 0))
-                    .shadow(color: palette.primary.opacity(0.6), radius: 10)
                 Image(systemName: "sparkle").font(.system(size: 10, weight: .black)).foregroundStyle(palette.onPrimary)
             case .origin:
                 Cookie(lobes: 6, depth: selected ? 0.22 : 0)
@@ -346,9 +336,8 @@ struct NodeDot: View {
         }
         .animation(Motion.standard, value: selected)
         .onAppear {
-            guard kind == .latest else { return }
+            guard kind == .latest, !Motion.reduced else { return }
             withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) { spin = true }
-            withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { pulse = true }
         }
     }
 }

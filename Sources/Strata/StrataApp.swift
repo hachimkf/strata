@@ -5,8 +5,11 @@ import StrataCore
 @main
 struct StrataApp: App {
     @StateObject private var library = Library()
+    @StateObject private var quickFind = QuickFindState.shared
+    @AppStorage(Prefs.accentKey) private var accent = 0
 
     init() {
+        Prefs.register()
         // Launched as a bare executable (swift run) the app would otherwise stay in the background.
         NSApplication.shared.setActivationPolicy(.regular)
     }
@@ -15,69 +18,43 @@ struct StrataApp: App {
         Window("Strata", id: "main") {
             ContentView()
                 .environmentObject(library)
-                .frame(minWidth: 960, minHeight: 620)
+                .environmentObject(quickFind)
+                .frame(minWidth: 1000, minHeight: 640)
         }
-        .defaultSize(width: 1280, height: 820)
+        .defaultSize(width: 1320, height: 840)
         .commands {
             CommandGroup(after: .newItem) {
                 Button("Rescan Folders") { library.rescan() }
                     .keyboardShortcut("r", modifiers: .command)
+                Button("Find Anything…") { withAnimation(Motion.standard) { quickFind.isOpen = true } }
+                    .keyboardShortcut("k", modifiers: .command)
             }
         }
 
-        MenuBarExtra("Strata", systemImage: "square.stack.3d.up.fill") {
-            MenuBarPanel().environmentObject(library)
+        Settings {
+            SettingsView().environmentObject(library)
+        }
+
+        MenuBarExtra {
+            MenuBarPanel()
+                .environmentObject(library)
+                .environmentObject(quickFind)
+                .themed(Prefs.accent(accent))
+        } label: {
+            // The menu bar item exists from launch even when no window is open,
+            // so app-wide setup (global shortcut, update check) happens here.
+            MenuBarLabel(setup: launchSetup)
         }
         .menuBarExtraStyle(.window)
     }
-}
 
-/// Quick access from the menu bar: the latest version of your most recent projects, one click away.
-struct MenuBarPanel: View {
-    @EnvironmentObject var library: Library
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Recent projects").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                .padding(.horizontal, 8).padding(.top, 4)
-            ForEach(library.projects.prefix(6)) { project in
-                Button { FileActions.open(project.latest.file) } label: {
-                    HStack(spacing: 10) {
-                        Thumbnail(file: project.latest.file, side: 80)
-                            .frame(width: 40, height: 30)
-                            .clipShape(RoundedRectangle(cornerRadius: 5))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(project.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                            Text("Latest · \(Format.date(project.latest.file.modified)) · \(project.latest.file.name)")
-                                .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.forward.app").foregroundStyle(.secondary)
-                    }
-                    .padding(6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(MenuRowStyle())
-                .help("Open \(project.latest.file.name)")
-            }
-            if library.projects.isEmpty {
-                Text(library.isScanning ? "Scanning…" : "No projects yet").foregroundStyle(.secondary).padding(8)
-            }
-            Divider().padding(.vertical, 4)
-            HStack {
-                Button("Open Strata") {
-                    openWindow(id: "main")
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-                Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 8).padding(.bottom, 4)
-        }
-        .padding(8)
-        .frame(width: 340)
+    private func launchSetup() {
+        Prefs.applyAppearance(UserDefaults.standard.string(forKey: Prefs.appearanceKey) ?? "System")
+        if Prefs.crashAlerts { Library.requestNotificationPermission() }
+        SpotlightSearch.shared.library = library
+        HotKey.shared.onPress = { SpotlightSearch.shared.toggle() }
+        HotKey.shared.setEnabled(UserDefaults.standard.bool(forKey: Prefs.hotkeyKey))
+        Updater.shared.checkIfDue { message in library.show(message) }
     }
 }
 
@@ -95,5 +72,22 @@ struct HoverHighlight: ViewModifier {
         content
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(hovering ? 0.07 : 0)))
             .onHover { hovering = $0 }
+    }
+}
+
+/// The menu bar icon. It is always alive, so it's where Strata learns how to reopen its main window.
+struct MenuBarLabel: View {
+    @Environment(\.openWindow) private var openWindow
+    let setup: () -> Void
+    private static var didSetup = false
+
+    var body: some View {
+        Image(nsImage: MenuBarIcon.image)
+            .onAppear {
+                WindowOpener.open = { openWindow(id: "main") }
+                guard !Self.didSetup else { return }
+                Self.didSetup = true
+                setup()
+            }
     }
 }

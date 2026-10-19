@@ -214,3 +214,55 @@ func saveAsToStartANewJobIsNotTheSameProject() {
     expect(result.projects.first?.name == "Norvia Calendar")
     expect(result.loose.count == 2)
 }
+
+func manualCorrectionsWin() throws {
+    let files = [
+        file("atlas logo.ai", daysAgo: 30), file("atlas logo v2.ai", daysAgo: 20),
+        file("random sketch.ai", daysAgo: 10),
+    ]
+    var o = Overrides()
+    o.links = [[files[2].path, files[0].path]]          // "this sketch belongs to Atlas"
+    o.projectNames = [files[0].path: "Atlas Brand Mark"]
+    var result = Grouper.group(files, overrides: o)
+    try require(result.projects.count == 1)
+    expect(result.projects[0].files.count == 3)
+    expect(result.projects[0].name == "Atlas Brand Mark")
+    expect(result.projects[0].files.first { $0.file.name == "random sketch.ai" }?.reason == .manual)
+
+    o = Overrides()
+    o.detached = [files[1].path]                          // "v2 is not part of this"
+    result = Grouper.group(files, overrides: o)
+    expect(result.projects.isEmpty)
+    expect(result.loose.count == 3)
+}
+
+func clientCorrectionsWin() throws {
+    let root = "/Users/me/Documents"
+    let files = [
+        file("Velora Menu.ai", daysAgo: 30, folder: root), file("Velora Logo.ai", daysAgo: 20, folder: root),
+        file("Kiosk top.ai", daysAgo: 10, folder: root + "/DAB KIOSK"), file("Kiosk side.ai", daysAgo: 9, folder: root + "/DAB KIOSK"),
+    ]
+    let grouping = Grouper.group(files, roots: [root])
+    var o = Overrides()
+    o.clientLinks = [[files[2].path, files[0].path]]
+    o.clientNames = [files[0].path: "Velora Coffee Co"]
+    var catalog = Collector.collect(grouping, roots: [root], overrides: o)
+    try require(catalog.collections.count == 1)
+    expect(catalog.collections[0].name == "Velora Coffee Co")
+    expect(catalog.collections[0].fileCount == 4)
+
+    o.hiddenClients = [files[1].path]
+    catalog = Collector.collect(grouping, roots: [root], overrides: o)
+    expect(catalog.collections.isEmpty && catalog.hidden.count == 1)
+}
+
+func readsFontsFromXMP() {
+    let xml = """
+    <x:xmpmeta><rdf:Description xmpMM:DocumentID="xmp.did:font-doc-1234">
+    <xmpTPg:Fonts><rdf:Bag><rdf:li rdf:parseType="Resource"><stFnt:fontName>Inter-Bold</stFnt:fontName>
+    <stFnt:fontFamily>Inter</stFnt:fontFamily></rdf:li><rdf:li rdf:parseType="Resource">
+    <stFnt:fontFamily>Playfair Display</stFnt:fontFamily></rdf:li></rdf:Bag></xmpTPg:Fonts>
+    </rdf:Description></x:xmpmeta>
+    """
+    expect(XMPReader.parse(xml: xml)?.fonts == ["Inter", "Playfair Display"])
+}

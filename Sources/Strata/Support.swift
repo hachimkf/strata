@@ -27,18 +27,21 @@ final class ThumbnailStore {
 struct Thumbnail: View {
     let file: CreativeFile
     var side: CGFloat = 320
+    @Environment(\.palette) private var palette
     @ViewState private var image: NSImage?
 
     var body: some View {
         Rectangle()
-            .fill(Color(nsColor: .quaternarySystemFill))
+            .fill(palette.surfaceContainerHighest)
             .overlay {
                 if let image {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                        .transition(.opacity)
                 } else {
-                    Image(systemName: Format.symbol(for: file.kind)).font(.system(size: 22)).foregroundStyle(.tertiary)
+                    Image(systemName: Format.symbol(for: file.kind)).font(.system(size: 22)).foregroundStyle(palette.outline)
                 }
             }
+            .animation(.easeOut(duration: 0.25), value: image != nil)
             .clipped()
             .task(id: file.path + "\(file.modified.timeIntervalSince1970)") {
                 image = await ThumbnailStore.shared.image(for: file.url, side: side, modified: file.modified)
@@ -59,23 +62,41 @@ enum Format {
         let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f
     }()
 
+    static let dayNumber: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "d"; return f
+    }()
+    static let monthShort: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM"; return f
+    }()
+    static let monthYear: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+    static let time: DateFormatter = {
+        let f = DateFormatter(); f.timeStyle = .short; f.dateStyle = .none; return f
+    }()
+
+    /// "Oct 17" this year, "Oct 17, 2025" otherwise, so dates never read ambiguously.
     static func date(_ d: Date) -> String {
         Calendar.current.isDate(d, equalTo: Date(), toGranularity: .year) ? day.string(from: d) : dayYear.string(from: d)
     }
 
-    /// Time between two saves, for the pills on the timeline.
-    static func gap(from a: Date, to b: Date) -> String {
-        let s = b.timeIntervalSince(a)
-        let days = s / 86400
-        if days < 1 {
-            let hours = Int(s / 3600)
-            return hours < 1 ? "minutes later" : "+\(hours) h"
-        }
-        if days < 14 { return "+\(Int(days)) day\(Int(days) == 1 ? "" : "s")" }
-        if days < 60 { return "+\(Int(days / 7)) weeks" }
-        if days < 365 { return "+\(Int(days / 30)) months" }
-        let years = days / 365
-        return years < 2 ? "+1 year" : "+\(Int(years)) years"
+    /// "Mar 2 – Oct 17, 2026", or with both years when they differ.
+    static func range(_ a: Date, _ b: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDate(a, inSameDayAs: b) { return dayYear.string(from: b) }
+        if cal.isDate(a, equalTo: b, toGranularity: .year) { return "\(day.string(from: a)) – \(dayYear.string(from: b))" }
+        return "\(dayYear.string(from: a)) – \(dayYear.string(from: b))"
+    }
+
+    /// Plain-language age of a date: "today", "yesterday", "3 days ago", "2 months ago".
+    static func ago(_ d: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(d) { return "today" }
+        if cal.isDateInYesterday(d) { return "yesterday" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        f.dateTimeStyle = .named
+        return f.localizedString(for: d, relativeTo: Date())
     }
 
     static func size(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
@@ -100,32 +121,9 @@ enum Format {
         }
     }
 
-    static func color(forExtension ext: String) -> Color {
-        switch ext {
-        case "AI", "EPS", "AIT", "SVG": return Color(red: 0.85, green: 0.45, blue: 0.05)
-        case "PSD", "PSB": return Color(red: 0.12, green: 0.42, blue: 0.85)
-        case "INDD": return Color(red: 0.85, green: 0.15, blue: 0.45)
-        case "AEP", "PRPROJ", "MP4", "MOV", "M4V": return Color(red: 0.45, green: 0.28, blue: 0.80)
-        case "PDF": return Color(red: 0.80, green: 0.18, blue: 0.15)
-        default: return Color(red: 0.12, green: 0.55, blue: 0.35)
-        }
-    }
 }
 
 // MARK: - Small shared views
-
-struct KindChip: View {
-    let text: String
-    var color: Color? = nil
-    var body: some View {
-        let c = color ?? Format.color(forExtension: text)
-        Text(text)
-            .font(.system(size: 10.5, weight: .semibold))
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(c.opacity(0.13), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .foregroundStyle(c)
-    }
-}
 
 enum FileActions {
     static func open(_ file: CreativeFile) { NSWorkspace.shared.open(file.url) }

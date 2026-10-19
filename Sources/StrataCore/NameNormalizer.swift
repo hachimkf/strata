@@ -27,7 +27,9 @@ public enum NameNormalizer {
 
     /// Generic words that are fine inside a name but can't identify a project on their own
     /// (otherwise every `Untitled-1.ai` and `Screenshot …png` would become one giant project).
-    public static let weak: Set<String> = [
+    public static let weak: Set<String> = baseWeak.union(Collector.deliverableWords)
+
+    static let baseWeak: Set<String> = [
         "untitled", "sans", "titre", "unbenannt", "sin", "titulo", "artboard", "plan", "image", "img",
         "dsc", "pxl", "screenshot", "capture", "screen", "shot", "photo", "pic", "video", "vid", "movie",
         "logo", "poster", "flyer", "banner", "post", "story", "stories", "instagram", "insta", "facebook",

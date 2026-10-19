@@ -9,6 +9,7 @@ public enum LinkReason: Int, Codable, Comparable, Sendable {
     case sameOriginalDocument
     case exportedFrom
     case sameDocument
+    case manual
 
     public static func < (a: LinkReason, b: LinkReason) -> Bool { a.rawValue < b.rawValue }
 
@@ -21,6 +22,7 @@ public enum LinkReason: Int, Codable, Comparable, Sendable {
         case .sameOriginalDocument: return "Same Adobe document (Save As / recovered)"
         case .exportedFrom: return "Exported from a file in this project"
         case .sameDocument: return "Same Adobe Document ID"
+        case .manual: return "Added by you"
         }
     }
 }
@@ -98,13 +100,16 @@ public enum Grouper {
     }
 
     public static func group(_ files: [CreativeFile], roots: [String] = defaultRoots(),
-                             hasher: ((CreativeFile) -> String?)? = nil) -> GroupingResult {
+                             hasher: ((CreativeFile) -> String?)? = nil,
+                             overrides: Overrides = Overrides()) -> GroupingResult {
         let n = files.count
         guard n > 0 else { return GroupingResult(projects: [], loose: []) }
         var uf = UnionFind(n)
         var reason = [LinkReason](repeating: .origin, count: n)
+        let detached = Set(files.indices.filter { overrides.detached.contains(files[$0].path) })
         func link(_ a: Int, _ b: Int, _ r: LinkReason) {
             guard a != b else { return }
+            if r != .manual && (detached.contains(a) || detached.contains(b)) { return }
             uf.union(a, b)
             reason[a] = max(reason[a], r)
             reason[b] = max(reason[b], r)
@@ -222,6 +227,13 @@ public enum Grouper {
             if let a = byKey[sub]?.first, let b = byKey[sups[0].key]?.first { link(a, b, .similarName) }
         }
 
+        // 6. The designer's own corrections.
+        var indexOf: [String: Int] = [:]
+        for (i, f) in files.enumerated() { indexOf[f.path] = i }
+        for pair in overrides.links where pair.count == 2 {
+            if let a = indexOf[pair[0]], let b = indexOf[pair[1]] { link(a, b, .manual) }
+        }
+
         // Collect components.
         var components: [Int: [Int]] = [:]
         for i in 0..<n { components[uf.find(i), default: []].append(i) }
@@ -230,7 +242,8 @@ public enum Grouper {
         var loose: [CreativeFile] = []
         for (_, members) in components {
             if members.count == 1 { loose.append(files[members[0]]); continue }
-            projects.append(buildProject(members: members, files: files, tokens: tokens, reasons: reason, hasher: hasher))
+            projects.append(buildProject(members: members, files: files, tokens: tokens, reasons: reason, hasher: hasher,
+                                         names: overrides.projectNames))
         }
         projects.sort { $0.lastModified > $1.lastModified }
         loose.sort { $0.modified > $1.modified }
@@ -238,7 +251,7 @@ public enum Grouper {
     }
 
     static func buildProject(members: [Int], files: [CreativeFile], tokens: [[String]], reasons: [LinkReason],
-                             hasher: ((CreativeFile) -> String?)?) -> ProjectGroup {
+                             hasher: ((CreativeFile) -> String?)?, names: [String: String] = [:]) -> ProjectGroup {
         let sorted = members.sorted { files[$0].modified < files[$1].modified }
         let hasSource = sorted.contains { files[$0].kind.isSource }
 
@@ -285,7 +298,8 @@ public enum Grouper {
             }
         }
         let best = counts.max { a, b in a.value != b.value ? a.value < b.value : a.key.count > b.key.count }?.key
-        let name = best.map(NameNormalizer.displayName) ?? out[0].file.baseName
+        let custom = out.lazy.compactMap { names[$0.file.path] }.first
+        let name = custom ?? best.map(NameNormalizer.displayName) ?? out[0].file.baseName
 
         return ProjectGroup(id: out[0].file.path, name: name, files: out)
     }

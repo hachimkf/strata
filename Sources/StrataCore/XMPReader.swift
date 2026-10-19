@@ -56,12 +56,20 @@ public enum XMPReader {
         }
         xml = removeBlocks(named: "xmpMM:DerivedFrom", from: xml)
 
+        var fonts: [String] = []
+        for block in blocks(named: "xmpTPg:Fonts", in: xml) {
+            for raw in all(of: "stFnt:fontFamily", in: block) {
+                let name = raw.replacingOccurrences(of: "^[A-Z]{6}\\+", with: "", options: .regularExpression)
+                if !fonts.contains(name) { fonts.append(name) }
+            }
+        }
         let info = XMPInfo(
             documentID: value(of: "xmpMM:DocumentID", in: xml),
             originalDocumentID: value(of: "xmpMM:OriginalDocumentID", in: xml),
             instanceID: value(of: "xmpMM:InstanceID", in: xml),
             derivedFromIDs: Array(Set(derived)).sorted(),
-            creatorTool: value(of: "xmp:CreatorTool", in: xml, normalize: false)
+            creatorTool: value(of: "xmp:CreatorTool", in: xml, normalize: false),
+            fonts: fonts
         )
         return info.isEmpty ? nil : info
     }
@@ -83,6 +91,22 @@ public enum XMPReader {
             if normalize { if let id = normalizeID(v) { return id } } else if !v.isEmpty { return v }
         }
         return nil
+    }
+
+    /// Every value of `name` (element or attribute form), in order.
+    static func all(of name: String, in xml: String) -> [String] {
+        let n = NSRegularExpression.escapedPattern(for: name)
+        var out: [String] = []
+        for pattern in ["\(n)\\s*=\\s*\"([^\"]*)\"", "<\(n)>\\s*([^<]*?)\\s*</\(n)>"] {
+            guard let re = try? NSRegularExpression(pattern: pattern) else { continue }
+            for m in re.matches(in: xml, range: NSRange(xml.startIndex..., in: xml)) {
+                if let r = Range(m.range(at: 1), in: xml) {
+                    let v = String(xml[r]).trimmingCharacters(in: .whitespaces)
+                    if !v.isEmpty { out.append(v) }
+                }
+            }
+        }
+        return out
     }
 
     /// Lowercases and drops empty / placeholder identifiers.

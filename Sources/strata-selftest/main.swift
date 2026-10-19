@@ -34,6 +34,9 @@ let checks: [(String, () throws -> Void)] = [
     ("repeatedNamesInProductFoldersStaySeparate", repeatedNamesInProductFoldersStaySeparate),
     ("printSizesAreOneArtwork", printSizesAreOneArtwork),
     ("saveAsToStartANewJobIsNotTheSameProject", saveAsToStartANewJobIsNotTheSameProject),
+    ("manualCorrectionsWin", manualCorrectionsWin),
+    ("clientCorrectionsWin", clientCorrectionsWin),
+    ("readsFontsFromXMP", readsFontsFromXMP),
 ]
 
 for (name, run) in checks {

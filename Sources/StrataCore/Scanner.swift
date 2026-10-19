@@ -27,7 +27,7 @@ public final class MetadataCache: @unchecked Sendable {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Strata", isDirectory: true)
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        return base.appendingPathComponent("metadata-cache-v2.json")   // bump when XMPInfo parsing changes
+        return base.appendingPathComponent("metadata-cache-v3.json")   // bump when XMPInfo parsing changes
     }
 
     func entry(for path: String, size: Int64, modified: Date) -> Entry? {
@@ -52,7 +52,7 @@ public final class MetadataCache: @unchecked Sendable {
     public func save() {
         guard let fileURL else { return }
         lock.lock(); let snapshot = entries; lock.unlock()
-        if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: fileURL, options: .atomic) }
+        if let data = try? JSONEncoder().encode(snapshot) { SecureStore.write(data, to: fileURL) }
     }
 }
 
@@ -66,6 +66,8 @@ public struct ScanResult: Sendable {
 public final class Scanner: @unchecked Sendable {
     public let cache: MetadataCache
     public var minimumFileSize: Int64 = 1024
+    /// Folders (and everything inside) that are never scanned.
+    public var excludedFolders: [String] = []
 
     static let skippedFolderNames: Set<String> = [
         "node_modules", ".git", "Library", "Caches", "DerivedData", "Pods", ".Trash", "venv", ".venv",
@@ -77,9 +79,10 @@ public final class Scanner: @unchecked Sendable {
 
     public func scan(roots: [URL]) -> ScanResult {
         let started = Date()
-        var found: [(URL, FileKind, Int64, Date, Date)] = []
+        var found: [(URL, FileKind, Int64, Date, Date, [String])] = []
+        let excluded = excludedFolders.map { ($0 as NSString).standardizingPath }
         var seen = Set<String>()
-        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey]
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey, .tagNamesKey]
 
         for root in roots {
             guard let walker = FileManager.default.enumerator(
@@ -89,7 +92,9 @@ public final class Scanner: @unchecked Sendable {
             for case let url as URL in walker {
                 guard let v = try? url.resourceValues(forKeys: Set(keys)) else { continue }
                 if v.isDirectory == true {
-                    if Self.skippedFolderNames.contains(url.lastPathComponent) { walker.skipDescendants() }
+                    if Self.skippedFolderNames.contains(url.lastPathComponent) || excluded.contains(url.standardizedFileURL.path) {
+                        walker.skipDescendants()
+                    }
                     continue
                 }
                 guard v.isRegularFile == true, let kind = FileKind.from(extension: url.pathExtension) else { continue }
@@ -98,7 +103,7 @@ public final class Scanner: @unchecked Sendable {
                 let path = url.standardizedFileURL.path
                 guard seen.insert(path).inserted else { continue }
                 let modified = v.contentModificationDate ?? Date.distantPast
-                found.append((url, kind, size, v.creationDate ?? modified, modified))
+                found.append((url, kind, size, v.creationDate ?? modified, modified, v.tagNames ?? []))
             }
         }
 
@@ -108,9 +113,9 @@ public final class Scanner: @unchecked Sendable {
         files.withUnsafeMutableBufferPointer { buffer in
             let out = buffer
             DispatchQueue.concurrentPerform(iterations: found.count) { i in
-                let (url, kind, size, created, modified) = found[i]
+                let (url, kind, size, created, modified, tags) = found[i]
                 let path = url.standardizedFileURL.path
-                var file = CreativeFile(path: path, kind: kind, size: size, created: created, modified: modified)
+                var file = CreativeFile(path: path, kind: kind, size: size, created: created, modified: modified, tags: tags)
                 if let cached = cache.entry(for: path, size: size, modified: modified), cached.xmpRead || !kind.mayContainXMP {
                     file.xmp = cached.xmp
                     file.contentHash = cached.hash

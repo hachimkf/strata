@@ -4,156 +4,447 @@ import StrataCore
 
 struct ProjectGridView: View {
     @EnvironmentObject var library: Library
+    @Environment(\.palette) private var palette
+    /// Client folders shown first (only on the home view).
+    var collections: [Client] = []
     let projects: [ProjectGroup]
     let title: String
     let subtitle: String
+    var hero: ProjectGroup? = nil
+    @Binding var sort: SortOrder
     let open: (ProjectGroup) -> Void
+    var openCollection: (Client) -> Void = { _ in }
 
-    private let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 20, alignment: .top)]
+    private let columns = [GridItem(.adaptive(minimum: 152, maximum: 196), spacing: 14, alignment: .top)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(title).font(.system(size: 34, weight: .semibold, design: .serif))
-                    Text(projects.isEmpty ? subtitle : "\(projects.count) projects · \(subtitle.lowercased())")
-                        .foregroundStyle(.secondary)
-                }
-                if projects.isEmpty {
+            VStack(alignment: .leading, spacing: 26) {
+                header
+                if projects.isEmpty && collections.isEmpty {
                     empty
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 26) {
-                        ForEach(projects) { project in
-                            Button { open(project) } label: { ProjectCard(project: project) }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button("Open Latest Version") { FileActions.open(project.latest.file) }
-                                    Button("Show Latest in Finder") { FileActions.reveal(project.latest.file) }
-                                    Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
-                                }
+                    if let hero {
+                        HeroCard(project: hero, open: { open(hero) })
+                    }
+                    if !collections.isEmpty {
+                        section("Clients", "\(collections.count) · everything for one client or brand, in one place")
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                            ForEach(Array(collections.enumerated()), id: \.element.id) { index, collection in
+                                Button { openCollection(collection) } label: { CollectionCard(collection: collection, index: index) }
+                                    .buttonStyle(PressScale())
+                                    .contextMenu {
+                                        if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
+                                        Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
+                                    }
+                            }
+                        }
+                    }
+                    if !projects.isEmpty {
+                        if !collections.isEmpty {
+                            section("Other projects", "\(projects.count) · not tied to a client")
+                        }
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
+                            ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+                                Button { open(project) } label: { ProjectCard(project: project, index: index) }
+                                    .buttonStyle(PressScale())
+                                    .draggable(project.latest.file.url)
+                                    .contextMenu {
+                                        Button("Open Latest Version") { FileActions.open(project.latest.file) }
+                                        Button("Show Latest in Finder") { FileActions.reveal(project.latest.file) }
+                                        Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+                                    }
+                            }
                         }
                     }
                 }
             }
-            .padding(28)
+            .padding(.horizontal, 32).padding(.vertical, 28)
+        }
+        .background(palette.surface)
+        .scrollFade()
+    }
+
+    private func section(_ title: String, _ subtitle: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(title).font(.display(22)).foregroundStyle(palette.onSurface)
+            Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(palette.onSurfaceVariant)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .bottom, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.display(44))
+                    .foregroundStyle(palette.onSurface)
+                Text(subtitle)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(palette.onSurfaceVariant)
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                ForEach(SortOrder.allCases) { option in
+                    FilterChip(title: option.rawValue, selected: sort == option) {
+                        withAnimation(Motion.standard) { sort = option }
+                    }
+                }
+            }
         }
     }
 
     @ViewBuilder private var empty: some View {
         if library.isScanning && library.lastScan == nil {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("Reading your folders…").foregroundStyle(.secondary)
+            VStack(spacing: 18) {
+                MorphingLoader(size: 52)
+                Text("Reading your folders…")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(palette.onSurfaceVariant)
             }
-            .frame(maxWidth: .infinity, minHeight: 300)
+            .frame(maxWidth: .infinity, minHeight: 360)
         } else {
-            ContentUnavailableView("Nothing here", systemImage: "square.stack.3d.up.slash",
-                                   description: Text("No projects match this view."))
-                .frame(minHeight: 300)
+            VStack(spacing: 14) {
+                Cookie(lobes: 6, depth: 0.2).fill(palette.secondaryContainer).frame(width: 72, height: 72)
+                    .overlay(Image(systemName: "sparkles").font(.system(size: 24, weight: .bold)).foregroundStyle(palette.onSecondaryContainer))
+                Text("Nothing here").font(.display(20)).foregroundStyle(palette.onSurface)
+                Text("No projects match this view.").foregroundStyle(palette.onSurfaceVariant)
+            }
+            .frame(maxWidth: .infinity, minHeight: 360)
         }
     }
 }
 
-/// A project shown as a little stack of its latest versions.
+// MARK: - Cards
+
+/// A palette grown from a file's artwork (or the app accent, if the user turned artwork colours off).
+struct ArtworkPalette: ViewModifier {
+    let file: CreativeFile?
+    let name: String
+    @ViewState private var seed: OKLCH?
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage(Prefs.artworkColorsKey) private var artworkColors = true
+    @AppStorage(Prefs.accentKey) private var accent = 0
+
+    func body(content: Content) -> some View {
+        let s = artworkColors ? (seed ?? ColorExtractor.fallback(for: name)) : Prefs.accent(accent)
+        content
+            .environment(\.palette, Palette(seed: s, dark: scheme == .dark))
+            .task(id: file?.path ?? name) {
+                guard let file else { return }
+                let found = await PaletteStore.shared.seed(for: file, name: name)
+                withAnimation(Motion.effects) { seed = found }
+            }
+    }
+}
+
+extension View {
+    func artworkPalette(_ file: CreativeFile?, name: String) -> some View { modifier(ArtworkPalette(file: file, name: name)) }
+}
+
+/// Kept for the project views: a palette from the project's latest version.
+struct ProjectPalette: ViewModifier {
+    let project: ProjectGroup
+    @Binding var seed: OKLCH?
+    func body(content: Content) -> some View {
+        content.artworkPalette(project.latest.file, name: project.name)
+    }
+}
+
 struct ProjectCard: View {
     let project: ProjectGroup
+    let index: Int
+    @ViewState private var seed: OKLCH?
     @ViewState private var hovering = false
+    @ViewState private var appeared = false
 
     var body: some View {
-        let versions = project.versions
-        let layers = Array(versions.suffix(3))
-        VStack(alignment: .leading, spacing: 10) {
-            ZStack {
-                ForEach(Array(layers.enumerated()), id: \.element.id) { index, version in
-                    let depth = layers.count - 1 - index   // 0 = top card
-                    Color.clear
-                        .aspectRatio(4 / 3, contentMode: .fit)
-                        .overlay(Thumbnail(file: version.file))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.black.opacity(0.08)))
-                        .shadow(color: .black.opacity(depth == 0 ? 0.18 : 0.08), radius: depth == 0 ? 8 : 3, y: depth == 0 ? 4 : 1)
-                        .rotationEffect(.degrees(rotation(depth)))
-                        .offset(x: offset(depth).width, y: offset(depth).height)
-                        .opacity(depth == 0 ? 1 : (depth == 1 ? 0.85 : 0.6))
-                }
-                VStack {
-                    Spacer()
-                    HStack {
-                        HStack(spacing: 5) {
-                            Circle().fill(Color.accentColor).frame(width: 6, height: 6)
-                            Text("Latest · \(Format.date(project.latest.file.modified))")
-                        }
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.regularMaterial, in: Capsule())
-                        Spacer()
-                    }
-                    .padding(8)
-                }
+        CardBody(project: project, hovering: hovering)
+            .modifier(ProjectPalette(project: project, seed: $seed))
+            .scaleEffect(hovering ? 1.015 : 1)
+            .opacity(appeared ? 1 : 0)
+            .offset(y: appeared ? 0 : 22)
+            .onHover { h in withAnimation(Motion.standard) { hovering = h } }
+            .onAppear {
+                withAnimation(Motion.standard.delay(min(Double(index) * 0.035, 0.45))) { appeared = true }
             }
-            .padding(.horizontal, 8).padding(.top, 8)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(project.name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                Text("\(versions.count) version\(versions.count == 1 ? "" : "s") · since \(Format.date(project.first.file.modified))")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            .padding(.horizontal, 4)
-
-            HStack(spacing: 5) {
-                ForEach(project.extensions.prefix(4), id: \.self) { KindChip(text: $0) }
-                if project.hasRecovered { KindChip(text: "Recovered", color: .orange) }
-                if project.duplicateCount > 0 { KindChip(text: "\(project.duplicateCount) dup", color: .gray) }
-            }
-            .padding(.horizontal, 4)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(hovering ? Color(nsColor: .controlBackgroundColor) : .clear)
-                .shadow(color: .black.opacity(hovering ? 0.08 : 0), radius: 12, y: 6)
-        )
-        .contentShape(Rectangle())
-        .onHover { h in withAnimation(.spring(duration: 0.35)) { hovering = h } }
     }
 
-    private func rotation(_ depth: Int) -> Double {
-        switch depth { case 0: return 0; case 1: return hovering ? -5 : -2; default: return hovering ? 6 : 3 }
+    private struct CardBody: View {
+        @Environment(\.palette) private var palette
+        let project: ProjectGroup
+        let hovering: Bool
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 9) {
+                VersionStack(versions: Array(project.versions.suffix(3)), fanned: hovering, radius: 14)
+                    .overlay(alignment: .bottomLeading) { latestBadge.padding(7) }
+                    .padding(.horizontal, 5).padding(.top, 5)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(project.name)
+                        .font(.display(15))
+                        .foregroundStyle(palette.onPrimaryContainer)
+                        .lineLimit(2, reservesSpace: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(Format.range(project.first.file.modified, project.latest.file.modified))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(palette.onPrimaryContainer.opacity(0.72))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 4)
+
+                ViewThatFits(in: .horizontal) {
+                    chips(kinds: 2)
+                    chips(kinds: 1)
+                    chips(kinds: 0)
+                }
+                .padding(.horizontal, 4).padding(.bottom, 3)
+            }
+            .padding(8)
+            .background(MorphRect(radius: hovering ? 28 : 22).fill(palette.primaryContainer))
+            .shadow(color: palette.primary.opacity(hovering ? 0.22 : 0), radius: 14, y: 8)
+            .contentShape(MorphRect(radius: 22))
+        }
+
+        private func chips(kinds: Int) -> some View {
+            HStack(spacing: 4) {
+                Pill(text: "\(project.versions.count)", fg: palette.onPrimary, bg: palette.primary, icon: "square.stack.fill")
+                    .help("\(project.versions.count) versions")
+                ForEach(project.extensions.prefix(kinds), id: \.self) { KindPill(ext: $0) }
+                if project.hasRecovered {
+                    Pill(text: "", fg: palette.onWarningContainer, bg: palette.warningContainer, icon: "bolt.fill")
+                        .help("Contains a file recovered after a crash")
+                }
+            }
+        }
+
+        private var latestBadge: some View {
+            HStack(spacing: 6) {
+                Cookie(lobes: 7, depth: 0.2).fill(palette.primary).frame(width: 9, height: 9)
+                Text(Format.date(project.latest.file.modified))
+            }
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(palette.onSurface)
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .background(.regularMaterial, in: Capsule())
+        }
+    }
+}
+
+/// The last few versions as a physical stack of prints; fans out on hover.
+struct VersionStack: View {
+    @Environment(\.palette) private var palette
+    let versions: [ProjectFile]
+    var fanned: Bool
+    var radius: CGFloat = 18
+
+    var body: some View {
+        ZStack {
+            ForEach(Array(versions.enumerated()), id: \.element.id) { index, version in
+                let depth = versions.count - 1 - index
+                Color.clear
+                    .aspectRatio(4 / 3, contentMode: .fit)
+                    .overlay(Thumbnail(file: version.file))
+                    .clipShape(MorphRect(radius: fanned ? radius + 6 : radius))
+                    .shadow(color: .black.opacity(depth == 0 ? 0.2 : 0.1), radius: depth == 0 ? 10 : 4, y: depth == 0 ? 5 : 2)
+                    .rotationEffect(.degrees(angle(depth)), anchor: .bottom)
+                    .offset(offset(depth))
+                    .scaleEffect(depth == 0 ? 1 : 0.94)
+                    .opacity(depth == 0 ? 1 : 0.9)
+            }
+        }
+    }
+
+    private func angle(_ depth: Int) -> Double {
+        switch depth { case 0: return 0; case 1: return fanned ? -7 : -2.5; default: return fanned ? 8 : 3 }
     }
 
     private func offset(_ depth: Int) -> CGSize {
         switch depth {
         case 0: return .zero
-        case 1: return hovering ? CGSize(width: -10, height: -6) : CGSize(width: -3, height: -3)
-        default: return hovering ? CGSize(width: 12, height: -8) : CGSize(width: 4, height: -4)
+        case 1: return fanned ? CGSize(width: -18, height: -10) : CGSize(width: -4, height: -5)
+        default: return fanned ? CGSize(width: 20, height: -12) : CGSize(width: 5, height: -7)
         }
     }
 }
 
-/// Files that didn't match anything, newest first.
+/// The project you touched last, big: one click to its newest file.
+struct HeroCard: View {
+    let project: ProjectGroup
+    let open: () -> Void
+    @ViewState private var seed: OKLCH?
+    @ViewState private var hovering = false
+
+    var body: some View {
+        Content(project: project, hovering: hovering, open: open)
+            .modifier(ProjectPalette(project: project, seed: $seed))
+            .onHover { h in withAnimation(Motion.gentle) { hovering = h } }
+    }
+
+    private struct Content: View {
+        @Environment(\.palette) private var palette
+        let project: ProjectGroup
+        let hovering: Bool
+        let open: () -> Void
+
+        var body: some View {
+            HStack(alignment: .center, spacing: 30) {
+                VersionStack(versions: Array(project.versions.suffix(3)), fanned: hovering, radius: 20)
+                    .frame(maxWidth: 270)
+                    .padding(.vertical, 8)
+                    .onTapGesture(perform: open)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("PICK UP WHERE YOU LEFT OFF")
+                        .font(.system(size: 11.5, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(palette.tertiary)
+                    Text(project.name)
+                        .font(.display(30))
+                        .foregroundStyle(palette.onPrimaryContainer)
+                        .lineLimit(2)
+                    Text("Latest saved \(Format.ago(project.latest.file.modified)) · \(project.latest.file.name)")
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(palette.onPrimaryContainer.opacity(0.75))
+                        .lineLimit(1).truncationMode(.middle)
+                    Filmstrip(versions: Array(project.versions.suffix(7)))
+                        .padding(.vertical, 6)
+                    HStack(spacing: 10) {
+                        Button { FileActions.open(project.latest.file) } label: {
+                            Label("Open latest", systemImage: "arrow.up.forward")
+                                .font(.system(size: 14, weight: .bold))
+                                .padding(.horizontal, 22).frame(height: 44)
+                                .background(palette.primary, in: Capsule())
+                                .foregroundStyle(palette.onPrimary)
+                        }
+                        .buttonStyle(PressScale())
+                        Button(action: open) {
+                            Label("See the timeline", systemImage: "point.3.filled.connected.trianglepath.dotted")
+                                .font(.system(size: 14, weight: .bold))
+                                .padding(.horizontal, 22).frame(height: 44)
+                                .background(palette.surface.opacity(0.65), in: Capsule())
+                                .foregroundStyle(palette.onPrimaryContainer)
+                        }
+                        .buttonStyle(PressScale())
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .background(MorphRect(radius: hovering ? 44 : 36).fill(palette.primaryContainer))
+            .overlay(alignment: .topTrailing) {
+                Cookie(lobes: 12, depth: 0.1)
+                    .fill(palette.primary.opacity(0.12))
+                    .frame(width: 220, height: 220)
+                    .rotationEffect(.degrees(hovering ? 30 : 0))
+                    .offset(x: 60, y: -70)
+                    .allowsHitTesting(false)
+            }
+            .clipShape(MorphRect(radius: hovering ? 44 : 36))
+        }
+    }
+}
+
+/// Tiny version history: dots on a line with thumbnails above, oldest left.
+struct Filmstrip: View {
+    @Environment(\.palette) private var palette
+    let versions: [ProjectFile]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(versions.enumerated()), id: \.element.id) { i, v in
+                let last = i == versions.count - 1
+                VStack(spacing: 6) {
+                    Thumbnail(file: v.file, side: 96)
+                        .frame(width: last ? 58 : 46, height: last ? 44 : 35)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(last ? palette.primary : .clear, lineWidth: 2))
+                    Text(Format.day.string(from: v.file.modified))
+                        .font(.system(size: 9.5, weight: last ? .bold : .medium))
+                        .foregroundStyle(last ? palette.primary : palette.onPrimaryContainer.opacity(0.6))
+                }
+                .help("\(v.file.name) · \(Format.full.string(from: v.file.modified))")
+            }
+        }
+    }
+}
+
+struct FilterChip: View {
+    @Environment(\.palette) private var palette
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if selected { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).transition(.scale.combined(with: .opacity)) }
+                Text(title)
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .padding(.horizontal, 14).frame(height: 34)
+            .background(Capsule().fill(selected ? palette.secondaryContainer : .clear))
+            .overlay(Capsule().strokeBorder(selected ? .clear : palette.outlineVariant, lineWidth: 1))
+            .foregroundStyle(selected ? palette.onSecondaryContainer : palette.onSurfaceVariant)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressScale())
+    }
+}
+
+/// M3 Expressive loading indicator: a rotating, breathing cookie.
+struct SpinningCookie: View {
+    @Environment(\.palette) private var palette
+    var size: CGFloat = 40
+    @ViewState private var spin = false
+
+    var body: some View {
+        Cookie(lobes: 9, depth: spin ? 0.22 : 0.08)
+            .fill(palette.primary)
+            .frame(width: size, height: size)
+            .rotationEffect(.degrees(spin ? 360 : 0))
+            .onAppear {
+                withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) { spin = true }
+            }
+    }
+}
+
+// MARK: - Loose files
+
 struct LooseFilesView: View {
+    @Environment(\.palette) private var palette
     let files: [CreativeFile]
     @ViewState private var preview: URL?
-    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16, alignment: .top)]
+    private let columns = [GridItem(.adaptive(minimum: 160, maximum: 210), spacing: 14, alignment: .top)]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Loose Files").font(.system(size: 34, weight: .semibold, design: .serif))
+                    Text("Loose files").font(.display(44)).foregroundStyle(palette.onSurface)
                     Text("\(files.count.formatted()) files with no other version found · click to preview, double-click to open")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(palette.onSurfaceVariant)
                 }
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                     ForEach(files.prefix(600)) { file in
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 8) {
                             Color.clear.aspectRatio(4 / 3, contentMode: .fit)
                                 .overlay(Thumbnail(file: file, side: 220))
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            Text(file.name).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
-                            Text("\(Format.date(file.modified)) · \(Format.shortFolder(file.path))")
-                                .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(file.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                                    .foregroundStyle(palette.onSurface)
+                                Text("\(Format.date(file.modified)) · \(Format.shortFolder(file.path))")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(palette.onSurfaceVariant).lineLimit(1)
+                            }
+                            .padding(.horizontal, 4)
                         }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainer))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { FileActions.open(file) }
                         .onTapGesture { preview = file.url }
@@ -164,11 +455,13 @@ struct LooseFilesView: View {
                     }
                 }
                 if files.count > 600 {
-                    Text("Showing the 600 most recent. Use search to find older files.").foregroundStyle(.secondary)
+                    Text("Showing the 600 most recent. Use search to find older files.").foregroundStyle(palette.onSurfaceVariant)
                 }
             }
-            .padding(28)
+            .padding(.horizontal, 32).padding(.vertical, 28)
         }
+        .background(palette.surface)
+        .scrollFade()
         .quickLookPreview($preview)
     }
 }

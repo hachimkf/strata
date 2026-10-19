@@ -14,6 +14,7 @@ struct ProjectGridView: View {
     @Binding var sort: SortOrder
     let open: (ProjectGroup) -> Void
     var openCollection: (Client) -> Void = { _ in }
+    @AppStorage("listMode") private var listMode = false
 
     private let columns = [GridItem(.adaptive(minimum: 152, maximum: 196), spacing: 14, alignment: .top)]
 
@@ -29,6 +30,13 @@ struct ProjectGridView: View {
                     }
                     if !collections.isEmpty {
                         section("Clients", "\(collections.count) · everything for one client or brand, in one place")
+                        if listMode {
+                            VStack(spacing: 4) {
+                                ForEach(collections) { c in
+                                    CollectionListRow(collection: c) { openCollection(c) }
+                                }
+                            }
+                        } else {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                             ForEach(Array(collections.enumerated()), id: \.element.id) { index, collection in
                                 Button { openCollection(collection) } label: { CollectionCard(collection: collection, index: index) }
@@ -39,11 +47,17 @@ struct ProjectGridView: View {
                                     }
                             }
                         }
+                        }
                     }
                     if !projects.isEmpty {
                         if !collections.isEmpty {
                             section("Other projects", "\(projects.count) · not tied to a client")
                         }
+                        if listMode {
+                            VStack(spacing: 4) {
+                                ForEach(projects) { p in ProjectListRow(project: p) { open(p) } }
+                            }
+                        } else {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                             ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
                                 Button { open(project) } label: { ProjectCard(project: project, index: index) }
@@ -55,6 +69,7 @@ struct ProjectGridView: View {
                                         Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
                                     }
                             }
+                        }
                         }
                     }
                 }
@@ -83,6 +98,8 @@ struct ProjectGridView: View {
                     .foregroundStyle(palette.onSurfaceVariant)
             }
             Spacer()
+            ButtonGroup(items: [(false, "", "square.grid.2x2"), (true, "", "list.bullet")], selection: $listMode, height: 34)
+                .help("Grid or list")
             HStack(spacing: 8) {
                 ForEach(SortOrder.allCases) { option in
                     FilterChip(title: option.rawValue, selected: sort == option) {
@@ -183,13 +200,13 @@ struct ProjectCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(project.name)
                         .font(.display(15))
-                        .foregroundStyle(palette.onPrimaryContainer)
+                        .foregroundStyle(palette.onSurface)
                         .lineLimit(2, reservesSpace: true)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(Format.range(project.first.file.modified, project.latest.file.modified))
                         .font(.system(size: 10.5, weight: .medium))
                         .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(palette.onPrimaryContainer.opacity(0.72))
+                        .foregroundStyle(palette.onSurfaceVariant)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 4)
@@ -202,16 +219,20 @@ struct ProjectCard: View {
                 .padding(.horizontal, 4).padding(.bottom, 3)
             }
             .padding(8)
-            .background(MorphRect(radius: hovering ? 28 : 22).fill(palette.primaryContainer))
+            .background(MorphRect(radius: hovering ? 28 : 22).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
+            .overlay(MorphRect(radius: hovering ? 28 : 22).stroke(hovering ? palette.primary.opacity(0.6) : palette.outlineVariant.opacity(0.5), lineWidth: hovering ? 2 : 1))
             .shadow(color: palette.primary.opacity(hovering ? 0.22 : 0), radius: 14, y: 8)
             .contentShape(MorphRect(radius: 22))
         }
 
         private func chips(kinds: Int) -> some View {
             HStack(spacing: 4) {
-                Pill(text: "\(project.versions.count)", fg: palette.onPrimary, bg: palette.primary, icon: "square.stack.fill")
-                    .help("\(project.versions.count) versions")
+                Pill(text: "\(project.versions.count) version\(project.versions.count == 1 ? "" : "s")", fg: palette.onPrimary, bg: palette.primary)
                 ForEach(project.extensions.prefix(kinds), id: \.self) { KindPill(ext: $0) }
+                if let approved = project.approved, let st = approved.file.status {
+                    Pill(text: st.rawValue, fg: palette.surface, bg: palette.tertiary)
+                        .help("\(approved.file.name) is marked \(st.rawValue)")
+                }
                 if project.hasRecovered {
                     Pill(text: "", fg: palette.onWarningContainer, bg: palette.warningContainer, icon: "bolt.fill")
                         .help("Contains a file recovered after a crash")
@@ -463,5 +484,82 @@ struct LooseFilesView: View {
         .background(palette.surface)
         .scrollFade()
         .quickLookPreview($preview)
+    }
+}
+
+// MARK: - Dense list rows
+
+/// One line per client: for managing many at once.
+struct CollectionListRow: View {
+    @Environment(\.palette) private var palette
+    let collection: Client
+    let open: () -> Void
+    @ViewState private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                ShapeAvatar(file: collection.latest, name: collection.name, size: 34)
+                Text(collection.name).font(.system(size: 13.5, weight: .bold)).foregroundStyle(palette.onSurface).lineLimit(1)
+                Spacer(minLength: 8)
+                Text("\(collection.projects.count) projects").frame(width: 90, alignment: .trailing)
+                Text("\(collection.fileCount) files").frame(width: 80, alignment: .trailing)
+                Text(Format.date(collection.lastModified)).frame(width: 110, alignment: .trailing)
+            }
+            .font(.system(size: 12, weight: .medium)).monospacedDigit()
+            .foregroundStyle(palette.onSurfaceVariant)
+            .padding(.horizontal, 12).frame(height: 48)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .contextMenu {
+            if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
+            Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
+        }
+    }
+}
+
+/// One line per project: name, client, versions, latest date and status.
+struct ProjectListRow: View {
+    @EnvironmentObject var library: Library
+    @Environment(\.palette) private var palette
+    let project: ProjectGroup
+    let open: () -> Void
+    @ViewState private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                Thumbnail(file: project.latest.file, side: 96)
+                    .frame(width: 44, height: 33)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(project.name).font(.system(size: 13.5, weight: .bold)).foregroundStyle(palette.onSurface).lineLimit(1)
+                    Text(library.collection(containing: project.id)?.name ?? "No client")
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(palette.onSurfaceVariant).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if let status = project.latest.file.status {
+                    Pill(text: status.rawValue, fg: palette.onTertiaryContainer, bg: palette.tertiaryContainer)
+                }
+                ForEach(project.extensions.prefix(2), id: \.self) { KindPill(ext: $0) }
+                Text("\(project.versions.count) version\(project.versions.count == 1 ? "" : "s")").frame(width: 80, alignment: .trailing)
+                Text(Format.date(project.latest.file.modified)).frame(width: 110, alignment: .trailing)
+            }
+            .font(.system(size: 12, weight: .medium)).monospacedDigit()
+            .foregroundStyle(palette.onSurfaceVariant)
+            .padding(.horizontal, 12).frame(height: 48)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .draggable(project.latest.file.url)
+        .contextMenu {
+            Button("Open Latest Version") { FileActions.open(project.latest.file) }
+            Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+        }
     }
 }

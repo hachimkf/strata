@@ -5,19 +5,19 @@ import Foundation
 /// `Atlas Logo final final (Recovered) 2.ai`, `atlas_logo_FINAL_v2.ai` and `atlas-logo.pdf`
 /// all become `["atlas", "logo"]`.
 public enum NameNormalizer {
-    /// Words that describe the *state* of a file, not the project. Removed entirely.
+    /// Words that describe the *state* of a file (a stage or an output flavour), not what it is. Removed entirely.
+    /// Words that change what the file shows ("blue", "colour", "alt", "music") are kept: different work.
     static let noise: Set<String> = [
         // versions & states
         "copy", "copie", "copia", "kopie", "recovered", "récupéré", "recupere", "recuperado",
         "final", "finale", "finalfinal", "def", "definitif", "définitif", "draft", "brouillon", "wip",
         "old", "new", "edit", "edited", "export", "exported", "version", "ver", "rev", "revised",
         "updated", "update", "fix", "fixed", "changes", "approved", "ok", "valide", "validé", "last",
-        "latest", "master", "alt", "option", "opt", "variant", "sketch", "rough", "proof", "preview",
-        "review", "feedback", "client", "test", "tmp", "temp",
+        "latest", "sketch", "rough", "proof", "preview",
+        "review", "feedback", "tmp", "temp",
         // output flavours
         "print", "web", "hd", "fhd", "uhd", "lowres", "hires", "low", "high", "res", "small", "large",
         "rgb", "cmyk", "outlined", "outline", "vectorized", "flattened", "flat", "compressed", "optimized",
-        "color", "colour", "bw", "mix", "music", "sound", "nosound", "subtitles", "subs", "cut",
         // paper & format sizes
         "iso", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "letter", "tabloid", "square", "portrait", "landscape",
         "vertical", "horizontal", "us", "uk", "eu",
@@ -95,6 +95,20 @@ public enum NameNormalizer {
     /// Specific words of a folder name, or empty when the folder is just an organiser.
     public static func folderTokens(for folderName: String) -> [String] {
         strongTokens(tokens(for: folderName + ".x")).filter { !genericFolderWords.contains($0) }
+    }
+
+    /// Placeholder names an app gives before you name the file: "Untitled-16", "Artboard 1", "export-01".
+    static let placeholderWords: Set<String> = [
+        "untitled", "sans", "titre", "unbenannt", "sin", "titulo", "senza", "titolo", "artboard", "plan", "travail",
+        "export", "image", "img", "dsc", "pxl", "scan", "document", "doc", "file", "layer", "frame",
+    ]
+
+    /// True for names with no real words at all, or only placeholder words.
+    public static func isPlaceholder(_ fileName: String) -> Bool {
+        var base = (fileName as NSString).deletingPathExtension
+        base = base.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+        let words = base.split(whereSeparator: { !$0.isLetter }).map(String.init).filter { $0.count >= 2 && !noise.contains($0) }
+        return words.allSatisfy(placeholderWords.contains)
     }
 
     /// "atlas logo" -> "Atlas Logo"

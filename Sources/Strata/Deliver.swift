@@ -15,12 +15,12 @@ enum Delivery {
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd"
         panel.nameFieldStringValue = "\(name) – delivery \(day.string(from: Date())).zip"
-        panel.message = "The latest version of each project, with its PDF / PNG exports."
+        panel.message = "Each project's approved version (or its latest), with its PDF / PNG exports and a list of contents."
         guard panel.runModal() == .OK, let destination = panel.url else { return }
 
         var plan: [(folder: String, files: [CreativeFile])] = []
         for p in projects {
-            let latest = p.latest
+            let latest = p.approved ?? p.latest   // the approved deliverable when there is one
             plan.append((projects.count > 1 ? safe(p.name) : "", [latest.file] + p.exports(of: latest).map(\.file)))
         }
         library.show("Preparing \(destination.lastPathComponent)…")
@@ -39,6 +39,18 @@ enum Delivery {
                         if !fm.fileExists(atPath: target.path) { try fm.copyItem(at: f.url, to: target); copied += 1 }
                     }
                 }
+                // What's inside, so the client (and you, later) know exactly what was sent.
+                var manifest = "\(name) — delivered \(Date().formatted(date: .long, time: .shortened))\n\n"
+                for item in plan {
+                    if !item.folder.isEmpty { manifest += "\(item.folder)/\n" }
+                    for f in item.files {
+                        let status = f.status.map { " · \($0.rawValue)" } ?? ""
+                        manifest += "  \(f.name) · saved \(f.modified.formatted(date: .abbreviated, time: .shortened)) · \(ByteCountFormatter.string(fromByteCount: f.size, countStyle: .file))\(status)\n"
+                    }
+                }
+                manifest += "\n\(copied) files. Prepared with Strata.\n"
+                try manifest.write(to: root.appendingPathComponent("Contents.txt"), atomically: true, encoding: .utf8)
+
                 try? fm.removeItem(at: destination)
                 let zip = Process()
                 zip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")

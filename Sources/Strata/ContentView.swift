@@ -3,7 +3,7 @@ import AppKit
 import StrataCore
 
 enum SidebarItem: Hashable {
-    case all, week, review, loose, tidy
+    case all, recents, week, review, loose, tidy
     case folder(URL)
     case collection(String)
     case project(String)
@@ -31,6 +31,9 @@ struct ContentView: View {
     @ViewState private var lastList: SidebarItem = .all
     @ViewState private var search = ""
     @ViewState private var sort: SortOrder = .recent
+    @ViewState private var backStack: [SidebarItem] = []
+    @ViewState private var forwardStack: [SidebarItem] = []
+    @ViewState private var historyMove = false
 
     var body: some View {
         NavigationSplitView {
@@ -40,7 +43,7 @@ struct ContentView: View {
             detailRoot
                 .overlay(alignment: .bottomTrailing) {
                     if selection.isList {
-                        ExtendedFAB(title: "Find anything", symbol: "magnifyingglass", shortcut: "⌘K") {
+                        ExtendedFAB(title: "Find anything", symbol: "magnifyingglass", shortcut: "⌘K", compact: true) {
                             withAnimation(Motion.standard) { quickFind.isOpen = true }
                         }
                         .padding(26)
@@ -55,14 +58,21 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottom) {
             if let message = library.toast {
-                Toast(message: message)
+                Toast(message: message, undo: library.toastUndo ? { library.undo() } : nil)
                     .padding(.bottom, 28)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .themed(Prefs.accent(accent))
-        .searchable(text: $search, placement: .toolbar, prompt: "Search clients, projects and files")
-        .onChange(of: selection) { if selection.isList { lastList = selection } }
+        .searchable(text: $search, placement: .toolbar, prompt: "Search everything")
+        .onChange(of: selection) { old, new in
+            if new.isList { lastList = new }
+            // Browser-style history: every move is recorded unless it *is* a back / forward step.
+            if historyMove { historyMove = false; return }
+            backStack.append(old)
+            if backStack.count > 100 { backStack.removeFirst() }
+            forwardStack.removeAll()
+        }
         .onChange(of: quickFind.pending) {
             if let item = quickFind.pending { go(item); quickFind.pending = nil }
         }
@@ -82,16 +92,37 @@ struct ContentView: View {
 
     private func go(_ item: SidebarItem) { withAnimation(Motion.standard) { selection = item } }
 
+    private func back() {
+        guard let previous = backStack.popLast() else { go(lastList); return }
+        historyMove = true
+        forwardStack.append(selection)
+        withAnimation(Motion.standard) { selection = previous }
+    }
+
+    private func forward() {
+        guard let next = forwardStack.popLast() else { return }
+        historyMove = true
+        backStack.append(selection)
+        withAnimation(Motion.standard) { selection = next }
+    }
+
+    private var navigation: PageNavigation {
+        PageNavigation(back: { back() }, forward: forwardStack.isEmpty ? nil : { forward() },
+                       openClient: { go(.collection($0)) }, openProject: { go(.project($0)) })
+    }
+
     @ViewBuilder private var detailRoot: some View {
         switch selection {
         case .loose:
             LooseFilesView(files: filteredLoose)
         case .tidy:
             TidyView()
+        case .recents:
+            RecentsView(showProject: { go(.project($0)) })
         case .collection(let id):
             if let collection = library.collection(id: id) {
                 CollectionPage(collection: collection, backTitle: listTitle(lastList),
-                               onBack: { go(lastList) }, openProject: { go(.project($0.id)) })
+                               onBack: { back() }, openProject: { go(.project($0.id)) })
                     .id(id)
             } else {
                 missing
@@ -99,10 +130,8 @@ struct ContentView: View {
         case .project(let id):
             if let project = library.project(id: id) {
                 let parent = library.collection(containing: id)
-                ProjectDetailView(project: project, backTitle: parent?.name ?? listTitle(lastList)) {
-                    go(parent.map { .collection($0.id) } ?? lastList)
-                }
-                .id(id)
+                ProjectDetailView(project: project, client: parent, navigation: navigation)
+                    .id(id)
             } else {
                 missing
             }
@@ -174,6 +203,7 @@ struct ContentView: View {
         case .review: return "Needs review"
         case .loose: return "Loose files"
         case .tidy: return "Tidy up"
+        case .recents: return "Recently opened"
         case .folder(let url): return url.lastPathComponent
         }
     }
@@ -201,6 +231,7 @@ struct Sidebar: View {
     @ViewState private var renamingProject: ProjectGroup?
     @ViewState private var mergingClient: Client?
     @ViewState private var clientForProject: ProjectGroup?
+    @ViewState private var showHealth = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -209,11 +240,12 @@ struct Sidebar: View {
             ScrollViewReader { proxy in
                 List(selection: listSelection) {
                     Section {
-                        row(.all, "Your work", "square.stack.3d.up.fill", library.collections.count + library.standalone.count)
-                        row(.week, "This week", "calendar", weekCount)
-                        row(.review, "Needs review", "exclamationmark.triangle.fill", library.projects.filter(\.needsReview).count)
-                        row(.loose, "Loose files", "doc.fill", library.loose.count)
-                        row(.tidy, "Tidy up", "sparkles", tidyCount)
+                        row(.all, "Your work", "square.stack.3d.up.fill", library.collections.count + library.standalone.count, unit: "clients and projects")
+                        row(.recents, "Recently opened", "clock.arrow.circlepath", 0)
+                        row(.week, "This week", "calendar", weekCount, unit: "projects saved in the last 7 days")
+                        row(.review, "Needs review", "exclamationmark.triangle.fill", library.projects.filter(\.needsReview).count, unit: "projects with crash copies or duplicates")
+                        row(.loose, "Loose files", "doc.fill", library.loose.count, unit: "files with no other version")
+                        row(.tidy, "Tidy up", "sparkles", tidyCount, unit: "files you could remove")
                     }
 
                     Section("Watching") {
@@ -230,6 +262,18 @@ struct Sidebar: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(palette.primary)
                     }
+                    if !library.favoriteClients.isEmpty || !library.favoriteProjects.isEmpty {
+                        Section("Favorites") {
+                            ForEach(library.favoriteClients) { c in
+                                clientLabel(c).tag(SidebarItem.collection(c.id))
+                                    .contextMenu { Button("Remove from Favorites") { library.toggleFavorite(c) } }
+                            }
+                            ForEach(library.favoriteProjects) { p in
+                                projectLabel(p, small: false).tag(SidebarItem.project(p.id))
+                                    .contextMenu { Button("Remove from Favorites") { library.toggleFavorite(p) } }
+                            }
+                        }
+                    }
                     Section("Clients") {
                         ForEach(clients) { client in
                             DisclosureGroup(isExpanded: expansion(client)) {
@@ -245,6 +289,7 @@ struct Sidebar: View {
                                     .tag(SidebarItem.collection(client.id))
                                     .id(client.id)
                                     .contextMenu {
+                                        Button(library.isFavorite(client) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(client) }
                                         Button("Rename…") { renamingClient = client }
                                         Button("Merge into another client…") { mergingClient = client }
                                         Button("Show all in Finder") { FileActions.reveal(client.allFiles) }
@@ -353,7 +398,7 @@ struct Sidebar: View {
     private var filterField: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal.decrease").font(.system(size: 12, weight: .semibold))
-            TextField("Find a client or project", text: $filter)
+            TextField("Filter this list", text: $filter)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, weight: .medium))
             if !filter.isEmpty {
@@ -366,7 +411,8 @@ struct Sidebar: View {
         .background(Capsule().fill(palette.surfaceContainerHigh))
     }
 
-    private func row(_ value: SidebarItem, _ title: String, _ symbol: String, _ count: Int) -> some View {
+    /// `unit` says what the number counts ("clients & projects", "files"); shown as a tooltip.
+    private func row(_ value: SidebarItem, _ title: String, _ symbol: String, _ count: Int, unit: String = "") -> some View {
         Label {
             Text(title).font(.system(size: 13, weight: .medium))
         } icon: {
@@ -374,6 +420,7 @@ struct Sidebar: View {
         }
         .badge(count)
         .tag(value)
+        .help(count > 0 && !unit.isEmpty ? "\(title): \(count) \(unit)" : title)
     }
 
     private func clientLabel(_ client: Client) -> some View {
@@ -408,6 +455,8 @@ struct Sidebar: View {
 
     @ViewBuilder private func projectMenu(_ project: ProjectGroup) -> some View {
         Button("Open latest version") { FileActions.open(project.latest.file) }
+        if let approved = project.approved { Button("Open approved (\(approved.file.status?.rawValue ?? ""))") { FileActions.open(approved.file) } }
+        Button(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
         Button("Rename…") { renamingProject = project }
         Button("Move to client…") { clientForProject = project }
         if let client = library.collection(containing: project.id) {
@@ -458,8 +507,22 @@ struct Sidebar: View {
                 ProgressView().controlSize(.small)
                 Text("Reading folders…")
             } else {
-                Circle().fill(palette.primary).frame(width: 7, height: 7)
-                Text("\(library.fileCount.formatted()) files · watching")
+                Button { showHealth.toggle() } label: {
+                    HStack(spacing: 8) {
+                        if library.health.ok {
+                            Circle().fill(palette.primary).frame(width: 7, height: 7)
+                        } else {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(palette.warning)
+                        }
+                        Text("\(library.fileCount.formatted()) files · \(library.lastScan.map { "updated \(Format.ago($0))" } ?? "watching")")
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Index health")
+                .popover(isPresented: $showHealth, arrowEdge: .top) {
+                    IndexHealthView().padding(16).frame(width: 380)
+                }
             }
             Spacer()
             SettingsLink {
@@ -496,4 +559,12 @@ struct PressScale: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(Motion.fast, value: configuration.isPressed)
     }
+}
+
+/// What a page needs to move around: browser-style back / forward and jumps.
+struct PageNavigation {
+    var back: () -> Void
+    var forward: (() -> Void)?
+    var openClient: (String) -> Void
+    var openProject: (String) -> Void
 }

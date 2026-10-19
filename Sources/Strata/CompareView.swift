@@ -4,25 +4,37 @@ import StrataCore
 
 enum CompareMode: String, CaseIterable { case side = "Side by side", slider = "Slider", overlay = "Overlay", difference = "Difference" }
 
-/// Two versions of one project, compared four ways. Pick versions from the strip at the bottom.
+/// Two versions of one project, compared four ways, with linked zoom.
+/// Click panel A or B to make it active, then pick its version in the filmstrip.
 struct CompareView: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
     let project: ProjectGroup
+    let client: Client?
     @ViewState var leftID: String
     @ViewState var rightID: String
+    let done: () -> Void
 
-    @ViewState private var mode: CompareMode = .slider
+    @ViewState private var mode: CompareMode = .side
+    @ViewState private var active: Side = .right
     @ViewState private var split: CGFloat = 0.5
     @ViewState private var opacity: Double = 0.5
     @ViewState private var leftImage: NSImage?
     @ViewState private var rightImage: NSImage?
-    @ViewState private var picking: Side = .right
+    @ViewState private var linkZoom = true
+    @ViewState private var zoomA: CGFloat = 1
+    @ViewState private var zoomB: CGFloat = 1
+    @ViewState private var panA: CGSize = .zero
+    @ViewState private var panB: CGSize = .zero
+    @ViewState private var dragStart: CGSize?
+    @ViewState private var dimsA: String?
+    @ViewState private var dimsB: String?
 
     enum Side { case left, right }
 
-    init(project: ProjectGroup, left: String, right: String) {
+    init(project: ProjectGroup, client: Client? = nil, left: String, right: String, done: @escaping () -> Void) {
         self.project = project
+        self.client = client
+        self.done = done
         _leftID = ViewState(initialValue: left)
         _rightID = ViewState(initialValue: right)
     }
@@ -30,54 +42,80 @@ struct CompareView: View {
     private var versions: [ProjectFile] { project.versions }
     private var left: ProjectFile { project.files.first { $0.id == leftID } ?? versions.first! }
     private var right: ProjectFile { project.files.first { $0.id == rightID } ?? project.latest }
+    private func number(_ f: ProjectFile) -> Int { (versions.firstIndex { $0.id == f.id } ?? 0) + 1 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            toolbar.padding(.horizontal, 22).padding(.vertical, 14)
-            stage
-                .padding(.horizontal, 22)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            strip.padding(.horizontal, 22).padding(.vertical, 14)
+        VStack(spacing: 14) {
+            header
+            modeBar
+            stage.frame(maxWidth: .infinity, maxHeight: .infinity)
+            zoomBar
+            strip
         }
-        .frame(minWidth: 1000, minHeight: 700)
-        .background(palette.surfaceDim)
-        .task(id: leftID) { leftImage = await image(left) }
-        .task(id: rightID) { rightImage = await image(right) }
+        .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 16)
+        .background(palette.surface)
+        .task(id: leftID) {
+            leftImage = await ThumbnailStore.shared.image(for: left.file.url, side: 2000, modified: left.file.modified)
+            dimsA = await FileMetrics.dimensions(of: left.file)
+        }
+        .task(id: rightID) {
+            rightImage = await ThumbnailStore.shared.image(for: right.file.url, side: 2000, modified: right.file.modified)
+            dimsB = await FileMetrics.dimensions(of: right.file)
+        }
     }
 
-    private func image(_ f: ProjectFile) async -> NSImage? {
-        await ThumbnailStore.shared.image(for: f.file.url, side: 1800, modified: f.file.modified)
-    }
+    // MARK: Header & modes
 
-    // MARK: Toolbar
-
-    private var toolbar: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("COMPARE").font(.system(size: 11, weight: .heavy)).tracking(1.2).foregroundStyle(palette.tertiary)
-                Text(project.name).font(.display(24)).foregroundStyle(palette.onSurface)
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "folder").foregroundStyle(palette.onSurfaceVariant)
+            if let client {
+                Text(client.name).font(.system(size: 17, weight: .medium)).foregroundStyle(palette.onSurfaceVariant)
+                Text("/").foregroundStyle(palette.outline)
             }
+            Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1)
             Spacer()
-            ButtonGroup(items: CompareMode.allCases.map { ($0, $0.rawValue, symbol($0)) }, selection: $mode, height: 38)
-            if mode == .overlay {
-                HStack(spacing: 8) {
-                    Image(systemName: "circle.lefthalf.filled").foregroundStyle(palette.onSurfaceVariant)
-                    Slider(value: $opacity, in: 0...1).frame(width: 140)
-                }
-                .transition(.scale.combined(with: .opacity))
+            Menu {
+                Button("Swap A and B") { swap(&leftID, &rightID) }
+                Button("Open A: \(left.file.name)") { FileActions.open(left.file) }
+                Button("Open B: \(right.file.name)") { FileActions.open(right.file) }
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold))
+                    .frame(width: 40, height: 40)
+                    .background(palette.surfaceContainer, in: Circle())
+                    .foregroundStyle(palette.onSurfaceVariant)
             }
-            Button { swap(&leftID, &rightID) } label: {
-                Image(systemName: "arrow.left.arrow.right").font(.system(size: 14, weight: .bold))
-                    .frame(width: 38, height: 38).background(palette.secondaryContainer, in: Circle())
-                    .foregroundStyle(palette.onSecondaryContainer)
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            Button(action: done) {
+                Label("Done", systemImage: "checkmark")
+                    .font(.system(size: 14, weight: .bold)).fixedSize()
+                    .padding(.horizontal, 20).frame(height: 40)
+                    .background(palette.primary, in: Capsule())
+                    .foregroundStyle(palette.onPrimary)
             }
-            .buttonStyle(PressScale()).help("Swap sides")
-            Button("Done") { dismiss() }
-                .keyboardShortcut(.cancelAction)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+            .buttonStyle(PressScale())
+            .keyboardShortcut(.cancelAction)
         }
-        .animation(Motion.standard, value: mode)
+    }
+
+    private var modeBar: some View {
+        HStack(spacing: 4) {
+            ForEach(CompareMode.allCases, id: \.self) { m in
+                let on = m == mode
+                Button { withAnimation(Motion.fast) { mode = m } } label: {
+                    Label(m.rawValue, systemImage: symbol(m))
+                        .font(.system(size: 13.5, weight: on ? .bold : .medium)).fixedSize()
+                        .padding(.horizontal, 16).frame(height: 38)
+                        .background(Capsule().fill(on ? palette.primary : .clear))
+                        .foregroundStyle(on ? palette.onPrimary : palette.onSurfaceVariant)
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressScale())
+            }
+        }
+        .padding(4)
+        .background(Capsule().fill(palette.surfaceContainer))
+        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.5)))
     }
 
     private func symbol(_ m: CompareMode) -> String {
@@ -95,128 +133,226 @@ struct CompareView: View {
         switch mode {
         case .side:
             HStack(spacing: 14) {
-                panel(leftImage, left, tag: "A")
-                panel(rightImage, right, tag: "B")
+                panel(.left)
+                panel(.right)
             }
         case .slider:
-            GeometryReader { geo in
-                let size = geo.size
-                ZStack(alignment: .leading) {
-                    picture(rightImage)
-                    picture(leftImage)
-                        .mask(alignment: .leading) { Rectangle().frame(width: size.width * split) }
-                    // Handle
-                    Rectangle().fill(palette.primary).frame(width: 3)
-                        .offset(x: size.width * split - 1.5)
-                    MorphShape(from: .cookie9, to: .cookie9, progress: 0)
-                        .fill(palette.primary)
-                        .frame(width: 44, height: 44)
-                        .overlay(Image(systemName: "arrow.left.and.right").font(.system(size: 14, weight: .black)).foregroundStyle(palette.onPrimary))
-                        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
-                        .offset(x: size.width * split - 22, y: 0)
-                        .frame(maxHeight: .infinity)
+            framed {
+                GeometryReader { geo in
+                    let w = geo.size.width
+                    ZStack(alignment: .leading) {
+                        zoomed(rightImage, .right)
+                        zoomed(leftImage, .left).mask(alignment: .leading) { Rectangle().frame(width: w * split) }
+                        Rectangle().fill(palette.primary).frame(width: 3).offset(x: w * split - 1.5)
+                        MorphShape(from: .cookie9, to: .cookie9, progress: 0).fill(palette.primary)
+                            .frame(width: 42, height: 42)
+                            .overlay(Image(systemName: "arrow.left.and.right").font(.system(size: 13, weight: .black)).foregroundStyle(palette.onPrimary))
+                            .offset(x: w * split - 21)
+                            .frame(maxHeight: .infinity)
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in split = min(max(v.location.x / max(w, 1), 0), 1) })
                 }
-                .overlay(alignment: .topLeading) { label(left, "A").padding(12) }
-                .overlay(alignment: .topTrailing) { label(right, "B").padding(12) }
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { v in
-                    split = min(max(v.location.x / max(size.width, 1), 0), 1)
-                })
             }
         case .overlay:
-            ZStack {
-                picture(leftImage)
-                picture(rightImage).opacity(opacity)
-            }
-            .overlay(alignment: .topLeading) { label(left, "A").padding(12) }
-            .overlay(alignment: .topTrailing) { label(right, "B").padding(12) }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            framed { ZStack { zoomed(leftImage, .left); zoomed(rightImage, .right).opacity(opacity) } }
         case .difference:
-            ZStack {
-                picture(leftImage)
-                picture(rightImage).blendMode(.difference)
+            framed {
+                ZStack { zoomed(leftImage, .left); zoomed(rightImage, .right).blendMode(.difference) }
+                    .compositingGroup()
+                    .background(Color.black)
+                    .overlay(alignment: .bottom) {
+                        Text("Black means identical. Anything bright changed between A and B.")
+                            .font(.system(size: 12, weight: .semibold))
+                            .padding(.horizontal, 14).padding(.vertical, 7)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(12)
+                    }
             }
-            .compositingGroup()
-            .background(Color.black)
-            .overlay(alignment: .bottom) {
-                Text("Black means identical. Anything bright changed between A and B.")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(14)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
     }
 
-    private func picture(_ image: NSImage?) -> some View {
-        ZStack {
+    /// One version in its own panel (side by side). Clicking it makes it the one the filmstrip changes.
+    private func panel(_ side: Side) -> some View {
+        let f = side == .left ? left : right
+        let on = active == side
+        return VStack(spacing: 8) {
+            panelHeader(side, f)
+            zoomed(side == .left ? leftImage : rightImage, side)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(on ? palette.primary : palette.outlineVariant.opacity(0.5), lineWidth: on ? 2 : 1))
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { withAnimation(Motion.fast) { active = side } })
+    }
+
+    private func panelHeader(_ side: Side, _ f: ProjectFile) -> some View {
+        let on = active == side
+        return HStack(spacing: 10) {
+            Text(side == .left ? "A" : "B").font(.system(size: 13, weight: .heavy))
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(on ? palette.primaryContainer : palette.surfaceContainerHighest))
+                .foregroundStyle(on ? palette.onPrimaryContainer : palette.onSurfaceVariant)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(f.file.name).font(.system(size: 13.5, weight: .bold)).foregroundStyle(palette.onSurface).lineLimit(1)
+                Text([side == .left ? dimsA : dimsB, Format.size(f.file.size), "v\(number(f))"].compactMap { $0 }.joined(separator: "  ·  "))
+                    .font(.system(size: 11.5, weight: .medium)).foregroundStyle(palette.onSurfaceVariant).lineLimit(1)
+            }
+            Spacer()
+            Menu { VersionMenu(file: f) } label: {
+                Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold)).frame(width: 26, height: 22)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .foregroundStyle(palette.onSurfaceVariant)
+        }
+        .padding(.horizontal, 6).padding(.top, 2)
+    }
+
+    private func framed<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                panelHeader(.left, left)
+                panelHeader(.right, right)
+            }
+            content().clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.outlineVariant.opacity(0.5)))
+    }
+
+    /// An image with this side's zoom and pan (shared with the other side when Link zoom is on).
+    private func zoomed(_ image: NSImage?, _ side: Side) -> some View {
+        let z = zoom(side), p = pan(side)
+        return ZStack {
             Rectangle().fill(palette.surfaceContainerHighest)
             if let image {
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+                    .scaleEffect(z).offset(p)
             } else {
-                MorphingLoader(size: 40)
+                MorphingLoader(size: 36)
             }
         }
+        .clipped()
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { v in
+                    guard z > 1.01 else { return }
+                    if dragStart == nil { dragStart = p }
+                    let s = dragStart ?? .zero
+                    setPan(CGSize(width: s.width + v.translation.width, height: s.height + v.translation.height), side)
+                }
+                .onEnded { _ in dragStart = nil }
+        )
     }
 
-    private func panel(_ image: NSImage?, _ f: ProjectFile, tag: String) -> some View {
-        picture(image)
-            .overlay(alignment: .topLeading) { label(f, tag).padding(12) }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-    }
+    private func zoom(_ side: Side) -> CGFloat { linkZoom || side == .left ? zoomA : zoomB }
+    private func pan(_ side: Side) -> CGSize { linkZoom || side == .left ? panA : panB }
+    private func setPan(_ p: CGSize, _ side: Side) { if linkZoom || side == .left { panA = p } else { panB = p } }
 
-    private func label(_ f: ProjectFile, _ tag: String) -> some View {
-        HStack(spacing: 8) {
-            Text(tag).font(.system(size: 12, weight: .black))
-                .frame(width: 24, height: 24)
-                .background(palette.primary, in: Circle()).foregroundStyle(palette.onPrimary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(f.file.name).font(.system(size: 12, weight: .bold)).lineLimit(1)
-                Text(Format.full.string(from: f.file.modified)).font(.system(size: 10.5, weight: .medium)).opacity(0.75)
+    // MARK: Zoom bar
+
+    private var zoomBar: some View {
+        HStack(spacing: 12) {
+            Toggle(isOn: $linkZoom) {
+                Label("Link zoom", systemImage: "link").font(.system(size: 13, weight: .medium)).fixedSize()
+            }
+            .toggleStyle(.switch).controlSize(.small)
+            .onChange(of: linkZoom) { if linkZoom { zoomB = zoomA; panB = panA } }
+            Divider().frame(height: 18)
+            Button { setZoom(currentZoom / 1.25) } label: { Image(systemName: "minus") }
+                .buttonStyle(.plain).frame(width: 30, height: 30).help("Zoom out")
+            Text("\(Int((currentZoom * 100).rounded()))%").font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 52)
+            Button { setZoom(currentZoom * 1.25) } label: { Image(systemName: "plus") }
+                .buttonStyle(.plain).frame(width: 30, height: 30).help("Zoom in")
+            Divider().frame(height: 18)
+            Button("Fit") { setZoom(1); panA = .zero; panB = .zero }.buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .padding(.horizontal, 14).frame(height: 30)
+                .background(Capsule().fill(palette.surfaceContainerHighest))
+            if mode == .overlay {
+                Divider().frame(height: 18)
+                Image(systemName: "circle.lefthalf.filled").foregroundStyle(palette.onSurfaceVariant)
+                Slider(value: $opacity, in: 0...1).frame(width: 120).help("How much of B shows over A")
             }
         }
-        .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
-        .background(.regularMaterial, in: Capsule())
+        .foregroundStyle(palette.onSurface)
+        .padding(.horizontal, 16).frame(height: 46)
+        .background(Capsule().fill(palette.surfaceContainer))
+        .overlay(Capsule().stroke(palette.outlineVariant.opacity(0.5)))
+        .animation(Motion.standard, value: mode)
+    }
+
+    private var currentZoom: CGFloat { active == .left || linkZoom ? zoomA : zoomB }
+
+    private func setZoom(_ value: CGFloat) {
+        let z = min(max(value, 1), 8)
+        withAnimation(Motion.fast) {
+            if linkZoom { zoomA = z; zoomB = z } else if active == .left { zoomA = z } else { zoomB = z }
+            if z == 1 { panA = .zero; panB = .zero }
+        }
     }
 
     // MARK: Version strip
 
     private var strip: some View {
-        HStack(spacing: 14) {
-            ButtonGroup(items: [(Side.left, "Pick A", "a.circle.fill"), (Side.right, "Pick B", "b.circle.fill")],
-                        selection: $picking, height: 34)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("Versions").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.onSurface)
+                Text("\(versions.count)").font(.system(size: 11.5, weight: .bold))
+                    .padding(.horizontal, 7).frame(height: 20)
+                    .background(Capsule().fill(palette.surfaceContainerHighest))
+                Text("Click a version to show it in \(active == .left ? "A" : "B")")
+                    .font(.system(size: 11.5)).foregroundStyle(palette.onSurfaceVariant)
+                Spacer()
+            }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(versions) { v in
-                        let isA = v.id == leftID, isB = v.id == rightID
-                        Button {
-                            withAnimation(Motion.standard) { if picking == .left { leftID = v.id } else { rightID = v.id } }
-                        } label: {
-                            VStack(spacing: 4) {
-                                Thumbnail(file: v.file, side: 160)
-                                    .frame(width: 84, height: 63)
-                                    .clipShape(RoundedRectangle(cornerRadius: isA || isB ? 16 : 10, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: isA || isB ? 16 : 10, style: .continuous)
-                                        .stroke(isA || isB ? palette.primary : .clear, lineWidth: 3))
-                                    .overlay(alignment: .topLeading) {
-                                        if isA || isB {
-                                            Text(isA ? "A" : "B").font(.system(size: 10, weight: .black))
-                                                .frame(width: 18, height: 18).background(palette.primary, in: Circle())
-                                                .foregroundStyle(palette.onPrimary).padding(4)
-                                        }
-                                    }
-                                Text(Format.date(v.file.modified)).font(.system(size: 10.5, weight: .semibold))
-                                    .foregroundStyle(palette.onSurfaceVariant)
-                            }
-                        }
-                        .buttonStyle(PressScale())
-                        .help(v.file.name)
-                    }
+                HStack(spacing: 12) {
+                    ForEach(versions.reversed()) { v in stripCard(v) }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
             }
         }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
+    }
+
+    private func stripCard(_ v: ProjectFile) -> some View {
+        let isA = v.id == leftID, isB = v.id == rightID
+        let chosen = isA || isB
+        return Button {
+            withAnimation(Motion.standard) { if active == .left { leftID = v.id } else { rightID = v.id } }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Thumbnail(file: v.file, side: 240)
+                    .frame(width: 168, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(chosen ? palette.primary : .clear, lineWidth: 2.5))
+                    .overlay(alignment: .topTrailing) {
+                        if chosen {
+                            Text(isA ? "A" : "B").font(.system(size: 10.5, weight: .heavy))
+                                .frame(width: 20, height: 20).background(palette.primary, in: Circle())
+                                .foregroundStyle(palette.onPrimary).padding(6)
+                        }
+                    }
+                HStack(spacing: 6) {
+                    Text("v\(number(v))").font(.system(size: 10.5, weight: .heavy))
+                        .padding(.horizontal, 6).frame(height: 18)
+                        .background(Capsule().fill(chosen ? palette.primary : palette.surfaceContainerHighest))
+                        .foregroundStyle(chosen ? palette.onPrimary : palette.onSurfaceVariant)
+                    Text(v.file.name).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(palette.onSurface)
+                }
+                .frame(width: 168, alignment: .leading)
+                Text(Format.full.string(from: v.file.modified)).font(.system(size: 10.5)).foregroundStyle(palette.onSurfaceVariant)
+            }
+        }
+        .buttonStyle(PressScale())
+        .help(v.file.name)
     }
 }

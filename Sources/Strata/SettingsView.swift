@@ -94,6 +94,10 @@ private struct GeneralSettings: View {
                 }
                 Toggle("Check for updates automatically (once a day)", isOn: $autoUpdate)
             }
+            SettingsCard(title: "Index health", subtitle: "What Strata could and couldn't read on the last scan.") {
+                IndexHealthView()
+                Button("Scan now") { library.rescan() }.disabled(library.isScanning)
+            }
             SettingsCard(title: "Watched folders", subtitle: "Strata reads these folders and everything inside. It only changes a file when you ask: a status tag, or Move to Trash after you confirm.") {
                 ForEach(library.folders, id: \.self) { url in
                     HStack {
@@ -349,5 +353,47 @@ struct ShortcutRecorder: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         recording = false
+    }
+}
+
+/// Last scan, unreadable folders, what was skipped, failed previews, stale corrections.
+struct IndexHealthView: View {
+    @EnvironmentObject var library: Library
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        let h = library.health
+        let failedPreviews = ThumbnailStore.shared.failed.count
+        VStack(alignment: .leading, spacing: 9) {
+            line("checkmark.circle.fill", palette.primary,
+                 h.lastScan.map { "Last scan \(Format.ago($0)) · \(h.files.formatted()) design files · \(String(format: "%.1f", h.duration)) s" } ?? "Not scanned yet")
+            if h.unreadable.isEmpty {
+                line("lock.open.fill", palette.primary, "Every watched folder is readable")
+            } else {
+                line("lock.fill", palette.warning, "\(h.unreadable.count) folder\(h.unreadable.count == 1 ? "" : "s") couldn't be read. Allow access in System Settings › Privacy & Security › Files and Folders.")
+                ForEach(h.unreadable.prefix(5), id: \.self) { path in
+                    Text(path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.onSurfaceVariant)
+                        .padding(.leading, 26).lineLimit(1).truncationMode(.middle)
+                }
+            }
+            line("chevron.left.forwardslash.chevron.right", palette.onSurfaceVariant,
+                 "Skipped \(h.codeProjects) code project\(h.codeProjects == 1 ? "" : "s") and \(h.sequenceFiles) rendered frames (not design work)")
+            line("photo", failedPreviews > 0 ? palette.warning : palette.onSurfaceVariant,
+                 failedPreviews > 0 ? "\(failedPreviews) files have no preview (macOS can't draw them; they still open normally)" : "All previews drawn so far")
+            if h.missingCorrections > 0 {
+                line("exclamationmark.triangle.fill", palette.warning,
+                     "\(h.missingCorrections) of your corrections point to files that were moved or deleted")
+            }
+        }
+        .font(.system(size: 12.5, weight: .medium))
+        .foregroundStyle(palette.onSurface)
+    }
+
+    private func line(_ symbol: String, _ color: Color, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol).foregroundStyle(color).frame(width: 18)
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

@@ -138,9 +138,23 @@ func differentProjectsOfSameClientStaySeparate() {
     expect(names.contains("Nike Poster"))
 }
 
-func addsOneGenericWordToSingleWordName() {
-    let result = Grouper.group([file("atlas.ai", daysAgo: 10), file("atlas logo.ai", daysAgo: 5)])
+func differentNamesAreDifferentProjects() {
+    // Exported from one Photoshop document, but different artwork: not versions of each other.
+    let files = [
+        file("Cup Blue.png", daysAgo: 2, doc: "did:cup-mockup"),
+        file("Cup Sky Blue.png", daysAgo: 1, doc: "did:cup-mockup"),
+        file("atlas.ai", daysAgo: 10), file("atlas logo.ai", daysAgo: 5),
+    ]
+    let result = Grouper.group(files)
+    expect(result.projects.isEmpty)
+    expect(result.loose.count == 4)
+}
+
+func versionMarkersStillGroup() {
+    let names = ["Cup Blue.png", "Cup Blue v2.png", "cup_blue_FINAL.png", "Cup Blue (Recovered).png", "Cup Blue copy.png", "Cup Blue (1).png"]
+    let result = Grouper.group(names.enumerated().map { file($1, daysAgo: Double(10 - $0)) })
     expect(result.projects.count == 1)
+    expect(result.projects.first?.files.count == names.count)
 }
 
 func flagsExactDuplicates() throws {

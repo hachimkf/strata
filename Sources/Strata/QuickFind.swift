@@ -227,38 +227,80 @@ struct QuickFindView: View {
         let openLatest: (() -> Void)?
     }
 
+    /// Ranked results. Typed file types ("pdf", "ai") and statuses ("final", "approved") act as filters.
     private var hits: [Hit] {
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
-        let words = q.split(separator: " ").map(String.init)
-        func matches(_ s: String) -> Bool { words.allSatisfy { s.lowercased().contains($0) } }
-        var out: [Hit] = []
-        let clients = q.isEmpty ? Array(library.collections.prefix(4)) : library.collections.filter { matches($0.name) }
-        for c in clients.prefix(5) {
-            out.append(Hit(id: c.id, title: c.name, subtitle: "Client · \(c.projects.count) projects · \(c.fileCount) files",
-                           kind: "Client", file: c.latest,
-                           go: { navigate(.collection(c.id)) },
-                           openLatest: c.latest.map { f in { FileActions.open(f) } }))
+        var words = q.split(separator: " ").map(String.init)
+        let typeWords: Set<String> = ["ai", "eps", "psd", "psb", "pdf", "png", "jpg", "jpeg", "svg", "mp4", "mov", "indd", "aep", "prproj", "gif", "tif", "tiff"]
+        let types = Set(words.filter(typeWords.contains).map { $0 == "jpeg" ? "jpg" : $0 }.map { $0.uppercased() })
+        let statuses = Set(VersionStatus.allCases.filter { s in words.contains(s.rawValue.lowercased()) || (s == .inReview && words.contains("review")) })
+        words.removeAll { typeWords.contains($0) || ["final", "approved", "sent", "draft", "review"].contains($0) }
+        let text = words.joined(separator: " ")
+
+        /// 100 exact · 70 starts with · 50 a word starts with · 25 contains; 0 = no match.
+        func score(_ name: String) -> Int {
+            guard !text.isEmpty else { return 1 }
+            let n = name.lowercased()
+            if n == text { return 100 }
+            guard words.allSatisfy({ n.contains($0) }) else { return 0 }
+            if n.hasPrefix(text) { return 70 }
+            let parts = n.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            if words.allSatisfy({ w in parts.contains { $0.hasPrefix(w) } }) { return 50 }
+            return 25
         }
-        let projects = q.isEmpty ? Array(library.projects.prefix(6)) : library.projects.filter { p in
-            matches(p.name + " " + (library.collection(containing: p.id)?.name ?? ""))
+        func recency(_ d: Date) -> Double { max(0, 30 - Date().timeIntervalSince(d) / 86400) / 30 }   // 0…1 over 30 days
+        func fits(_ files: [CreativeFile]) -> Bool {
+            (types.isEmpty || files.contains { types.contains($0.fileExtension) })
+                && (statuses.isEmpty || files.contains { $0.status.map(statuses.contains) ?? false })
         }
-        for p in projects.prefix(8) {
-            let client = library.collection(containing: p.id)?.name
-            out.append(Hit(id: p.id, title: p.name,
-                           subtitle: [client, "\(p.versions.count) versions", "latest \(Format.date(p.latest.file.modified))"].compactMap { $0 }.joined(separator: " · "),
-                           kind: "Project", file: p.latest.file,
-                           go: { navigate(.project(p.id)) },
-                           openLatest: { FileActions.open(p.latest.file) }))
-        }
-        if !q.isEmpty {
-            let files = (library.projects.flatMap { $0.files.map(\.file) } + library.loose).filter { matches($0.name) }
-                .sorted { $0.modified > $1.modified }
-            for f in files.prefix(8) {
-                out.append(Hit(id: "file:" + f.path, title: f.name, subtitle: "\(Format.date(f.modified)) · \(Format.folder(f.path))",
-                               kind: "File", file: f, go: { FileActions.open(f) }, openLatest: nil))
+
+        var ranked: [(Double, Hit)] = []
+        if q.isEmpty {
+            for c in library.favoriteClients + library.collections.prefix(3) where !ranked.contains(where: { $0.1.id == c.id }) {
+                ranked.append((2, clientHit(c)))
             }
+            for p in library.projects.prefix(6) { ranked.append((1, projectHit(p))) }
+            return ranked.map(\.1)
         }
-        return out
+        for c in library.collections {
+            let sc = score(c.name)
+            guard sc > 0, fits(c.allFiles) else { continue }
+            ranked.append((Double(sc) + 8 + recency(c.lastModified) * 10, clientHit(c)))
+        }
+        for p in library.projects {
+            let client = library.collection(containing: p.id)?.name ?? ""
+            let sc = max(score(p.name), score(p.name + " " + client) / 2, score(client + " " + p.name) / 2)
+            guard sc > 0, fits(p.files.map(\.file)) else { continue }
+            ranked.append((Double(sc) + recency(p.lastModified) * 10 + (library.isFavorite(p) ? 5 : 0), projectHit(p)))
+        }
+        let allFiles = library.projects.flatMap { $0.files.map(\.file) } + library.loose
+        for f in allFiles {
+            let sc = score(f.name)
+            guard sc > 0, fits([f]) else { continue }
+            ranked.append((Double(sc) - 10 + recency(f.modified) * 10, fileHit(f)))
+        }
+        return ranked.sorted { $0.0 > $1.0 }.prefix(14).map(\.1)
+    }
+
+    private func clientHit(_ c: Client) -> Hit {
+        Hit(id: c.id, title: c.name, subtitle: "Client · \(c.projects.count) projects · \(c.fileCount) files",
+            kind: "Client", file: c.latest, go: { navigate(.collection(c.id)) },
+            openLatest: c.latest.map { f in { FileActions.open(f) } })
+    }
+
+    private func projectHit(_ p: ProjectGroup) -> Hit {
+        let client = library.collection(containing: p.id)?.name
+        let target = p.latest
+        var bits = [client, "\(p.versions.count) versions", "latest \(Format.date(p.latest.file.modified))"].compactMap { $0 }
+        if let st = p.approved?.file.status { bits.append(st.rawValue) }
+        return Hit(id: p.id, title: p.name, subtitle: bits.joined(separator: " · "),
+                   kind: "Project", file: p.latest.file, go: { navigate(.project(p.id)) },
+                   openLatest: { FileActions.open(target.file) })
+    }
+
+    private func fileHit(_ f: CreativeFile) -> Hit {
+        Hit(id: "file:" + f.path, title: f.name, subtitle: "\(Format.date(f.modified)) · \(Format.folder(f.path))",
+            kind: f.status?.rawValue ?? "File", file: f, go: { FileActions.open(f) }, openLatest: nil)
     }
 
     var body: some View {

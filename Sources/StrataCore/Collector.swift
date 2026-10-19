@@ -63,6 +63,20 @@ public enum Collector {
         "carrousel", "banner", "banners", "cover", "covers", "frame", "test", "sample", "exemple", "example",
     ]
 
+    /// Everyday words (mostly French, Spanish, Italian) that aren't in the English word list but are never brands.
+    static let commonWords: Set<String> = [
+        "cafe", "caffe", "coffe", "boulangerie", "patisserie", "restaurant", "resto", "hotel", "maison", "jardin",
+        "cuisine", "plage", "soleil", "mer", "ville", "salon", "maires", "voeux", "fete", "noel", "ramadan", "aid",
+        "eid", "mariage", "anniversaire", "affiche", "carte", "cartes", "logo", "marque", "nouveau", "nouvelle",
+        "grand", "petit", "rouge", "bleu", "vert", "jaune", "noir", "blanc", "rose", "gris", "orange", "violet",
+        "azul", "rojo", "verde", "negro", "blanco", "rosso", "nero", "bianco", "casa", "bella", "dolce", "mercado",
+        "souk", "medina", "riad", "dar", "beldi", "atlas", "sahara", "maroc", "morocco", "marrakech", "casablanca",
+        "rabat", "tanger", "fes", "agadir", "paris", "france", "dubai", "london", "madrid", "milano",
+        "insta", "linkedin", "tiktok", "youtube", "facebook", "pinterest", "etsy", "shopify", "amazon",
+        "mockup", "mockups", "freepik", "envato", "upscaled", "upscale", "topaz", "gigapixel", "codex", "chatgpt",
+        "concat", "render", "renders", "output", "scene", "scenes", "comment", "comments", "speakers", "items",
+    ]
+
     /// A unit is something to place in a collection: a whole project, or one loose file.
     struct Unit {
         let project: ProjectGroup?
@@ -151,9 +165,9 @@ public enum Collector {
         var leading: [String: Int] = [:]
         for u in units { if let first = brandCandidates(u.nameTokens).first { leading[first, default: 0] += 1 } }
         let brands = Set(leading.filter { word, count in
-            if Dictionary.contains(word) { return false }                 // "left", "grid", "stage"
+            if Dictionary.contains(word) || commonWords.contains(word) { return false }   // "left", "grid", "cafe"
             if Dictionary.isPlural(word) { return count >= 4 }            // "norvia" yes, "frames" rarely
-            return count >= 2
+            return count >= (word.count <= 4 ? 3 : 2)                     // short words need more evidence
         }.keys)
         // Spelling variants of one brand ("solarastudio", "solara") share their first 6 letters.
         var canonical: [String: String] = [:]
@@ -274,7 +288,7 @@ public enum Collector {
             let singles = members.compactMap { units[$0].file }.sorted { $0.modified > $1.modified }
             let paths = members.flatMap { units[$0].files.map(\.path) }
             let name = overrides.first(in: overrides.clientNames, for: paths)
-                ?? collectionName(members: members, units: units, anchors: anchorOf)
+                ?? collectionName(members: members, units: units, anchors: anchorOf, brands: brands)
             let id = "collection:" + (projects.first?.id ?? singles.first?.path ?? name)
             let collection = Collection(id: id, name: name, projects: projects, singles: singles)
             if paths.contains(where: overrides.hiddenClients.contains) { hidden.append(collection) } else { collections.append(collection) }
@@ -305,13 +319,18 @@ public enum Collector {
         return nil
     }
 
-    static func collectionName(members: [Int], units: [Unit], anchors: [Set<String>]) -> String {
+    static func collectionName(members: [Int], units: [Unit], anchors: [Set<String>], brands: Set<String> = []) -> String {
         // A folder holding most of the collection names it ("Velora Coffee").
         var folderCount: [String: Int] = [:]
         for i in members { for a in anchors[i] { folderCount[a, default: 0] += 1 } }
         // Otherwise the brand word most names share ("Norvia").
         var wordCount: [String: Int] = [:]
         for i in members { for w in Set(brandCandidates(units[i].nameTokens)) { wordCount[w, default: 0] += 1 } }
+        // A real brand word ("solara") beats an ordinary one that happens to be frequent ("studio").
+        let brandCounts = wordCount.filter { brands.contains($0.key) }
+        if let b = brandCounts.max(by: { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }), b.value >= max(2, members.count / 10) {
+            wordCount = brandCounts
+        }
         let topWord = wordCount.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }
         let topFolder = folderCount.max { a, b in a.value != b.value ? a.value < b.value : a.key > b.key }
 

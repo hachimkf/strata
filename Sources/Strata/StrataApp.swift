@@ -29,6 +29,11 @@ struct StrataApp: App {
                 Button("Find Anything…") { withAnimation(Motion.standard) { quickFind.isOpen = true } }
                     .keyboardShortcut("k", modifiers: .command)
             }
+            CommandGroup(after: .undoRedo) {
+                Button("Undo Last Strata Change") { library.undo() }
+                    .keyboardShortcut("z", modifiers: [.command, .option])
+                    .disabled(!library.canUndo)
+            }
         }
 
         Settings {

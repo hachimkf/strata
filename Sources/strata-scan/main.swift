@@ -3,6 +3,14 @@ import StrataCore
 
 // Command-line check of the grouping engine:  strata-scan [folder ...] [--all] [--no-cache]
 var args = Array(CommandLine.arguments.dropFirst())
+if args.contains("--recents") {
+    let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd HH:mm"
+    for (app, list) in RecentFiles.all().sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+        print("■ \(app.rawValue)")
+        for r in list { print("   \(r.opened.map(df.string) ?? "      —       ")  \(r.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))") }
+    }
+    exit(0)
+}
 let showAll = args.contains("--all")
 let showCollections = args.contains("--collections")
 let showVisual = args.contains("--visual")

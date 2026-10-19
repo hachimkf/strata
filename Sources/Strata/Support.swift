@@ -9,6 +9,8 @@ import StrataCore
 final class ThumbnailStore {
     static let shared = ThumbnailStore()
     private let cache = NSCache<NSString, NSImage>()
+    /// Files macOS couldn't draw a preview for (shown in Settings › General › Index health).
+    private(set) var failed = Set<String>()
 
     init() { cache.countLimit = 800 }
 
@@ -18,7 +20,10 @@ final class ThumbnailStore {
         let request = QLThumbnailGenerator.Request(
             fileAt: url, size: CGSize(width: side, height: side),
             scale: NSScreen.main?.backingScaleFactor ?? 2, representationTypes: .all)
-        guard let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request) else { return nil }
+        guard let rep = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request) else {
+            failed.insert(url.path)
+            return nil
+        }
         cache.setObject(rep.nsImage, forKey: key)
         return rep.nsImage
     }
@@ -53,13 +58,13 @@ struct Thumbnail: View {
 
 enum Format {
     static let day: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "MMM d"; return f
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("d MMM"); return f
     }()
     static let dayYear: DateFormatter = {
-        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("d MMM yyyy"); return f
     }()
     static let full: DateFormatter = {
-        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; return f
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("d MMM yyyy HH:mm"); return f
     }()
 
     static let dayNumber: DateFormatter = {
@@ -129,6 +134,7 @@ enum FileActions {
     static func open(_ file: CreativeFile) { NSWorkspace.shared.open(file.url) }
     static func reveal(_ file: CreativeFile) { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
     static func reveal(_ files: [CreativeFile]) { NSWorkspace.shared.activateFileViewerSelecting(files.map(\.url)) }
+    static func reveal(path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
 }
 
 // MARK: - Build without Xcode

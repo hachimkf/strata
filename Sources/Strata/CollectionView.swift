@@ -47,19 +47,19 @@ struct CollectionCard: View {
                         .offset(x: 12, y: -8)
                     FileStack(files: covers, fanned: hovering)
                         .padding(8)
-                        .background(MorphRect(radius: 16).fill(palette.primary.opacity(0.85)))
+                        .background(MorphRect(radius: 16).fill(palette.primaryContainer))
                 }
                 .padding(.top, 10).padding(.horizontal, 4)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(collection.name)
                         .font(.display(16))
-                        .foregroundStyle(palette.onPrimaryContainer)
+                        .foregroundStyle(palette.onSurface)
                         .lineLimit(2, reservesSpace: true)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("\(collection.projects.count) projects · \(collection.fileCount) files")
                         .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(palette.onPrimaryContainer.opacity(0.72))
+                        .foregroundStyle(palette.onSurfaceVariant)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 4)
@@ -78,7 +78,8 @@ struct CollectionCard: View {
                 .padding(.horizontal, 4).padding(.bottom, 3)
             }
             .padding(8)
-            .background(MorphRect(radius: hovering ? 28 : 22).fill(palette.primaryContainer))
+            .background(MorphRect(radius: hovering ? 28 : 22).fill(hovering ? palette.surfaceContainerHigh : palette.surfaceContainerLow))
+            .overlay(MorphRect(radius: hovering ? 28 : 22).stroke(hovering ? palette.primary.opacity(0.6) : palette.outlineVariant.opacity(0.5), lineWidth: hovering ? 2 : 1))
             .shadow(color: palette.primary.opacity(hovering ? 0.25 : 0), radius: 14, y: 8)
             .contentShape(MorphRect(radius: 22))
         }
@@ -134,6 +135,7 @@ struct CollectionPage: View {
         @ViewState private var renaming = false
         @ViewState private var merging = false
         @ViewState private var confirmHide = false
+        @AppStorage("listMode") private var listMode = false
 
         private let columns = [GridItem(.adaptive(minimum: 152, maximum: 196), spacing: 14, alignment: .top)]
 
@@ -141,7 +143,14 @@ struct CollectionPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-                    ButtonGroup(items: ClientTab.allCases.map { ($0, $0.rawValue, symbol($0)) }, selection: $tab, height: 40)
+                    HStack {
+                        ButtonGroup(items: ClientTab.allCases.map { ($0, $0.rawValue, symbol($0)) }, selection: $tab, height: 40)
+                        Spacer()
+                        if tab == .projects {
+                            ButtonGroup(items: [(false, "", "square.grid.2x2"), (true, "", "list.bullet")], selection: $listMode, height: 34)
+                                .help("Grid or list")
+                        }
+                    }
                     switch tab {
                     case .projects: projectsTab
                     case .brand: BrandKitView(collection: collection)
@@ -186,6 +195,9 @@ struct CollectionPage: View {
         @ViewBuilder private var projectsTab: some View {
             if !collection.projects.isEmpty {
                 section("Projects", "\(collection.projects.count) with versions, newest first")
+                if listMode {
+                    VStack(spacing: 4) { ForEach(collection.projects) { p in ProjectListRow(project: p) { openProject(p) } } }
+                } else {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                     ForEach(Array(collection.projects.enumerated()), id: \.element.id) { i, project in
                         Button { openProject(project) } label: { ProjectCard(project: project, index: i) }
@@ -199,6 +211,7 @@ struct CollectionPage: View {
                             }
                     }
                 }
+            }
             }
             if !collection.singles.isEmpty {
                 section("Other files", "\(collection.singles.count) files with a single version")
@@ -215,47 +228,61 @@ struct CollectionPage: View {
             VStack(alignment: .leading, spacing: 10) {
                 Color.clear.frame(height: 34)   // room for the floating back button
 
-                HStack(alignment: .bottom, spacing: 18) {
-                    ShapeAvatar(file: collection.latest, name: collection.name, size: 92)
-                        .shadow(color: palette.primary.opacity(0.35), radius: 16, y: 8)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("CLIENT  ·  \(collection.projects.count) PROJECTS  ·  \(collection.fileCount) FILES")
-                            .font(.system(size: 11.5, weight: .heavy)).tracking(1.2)
-                            .foregroundStyle(palette.tertiary)
-                        Text(collection.name)
-                            .font(.display(46))
-                            .foregroundStyle(palette.onSurface)
-                            .lineLimit(1).minimumScaleFactor(0.6)
-                        Text(Format.range(collection.firstModified, collection.lastModified))
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(palette.onSurfaceVariant)
-                    }
-                    Spacer()
-                    Menu {
-                        Button("Rename…") { renaming = true }
-                        Button("Merge into another client…") { merging = true }
-                        Button("Show all in Finder") { FileActions.reveal(collection.allFiles) }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .bottom, spacing: 18) { clientTitle; Spacer(minLength: 12); clientActions.fixedSize() }
+                    VStack(alignment: .leading, spacing: 14) { clientTitle; clientActions.fixedSize() }
+                }
+            }
+        }
+
+        private var clientTitle: some View {
+            HStack(alignment: .bottom, spacing: 18) {
+                ShapeAvatar(file: collection.latest, name: collection.name, size: 92)
+                    .shadow(color: palette.primary.opacity(0.35), radius: 16, y: 8)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CLIENT  ·  \(collection.projects.count) PROJECTS  ·  \(collection.fileCount) FILES")
+                        .font(.system(size: 11.5, weight: .heavy)).tracking(1.2)
+                        .foregroundStyle(palette.tertiary)
+                        .lineLimit(1)
+                    Text(collection.name)
+                        .font(.display(46))
+                        .foregroundStyle(palette.onSurface)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Text(Format.range(collection.firstModified, collection.lastModified))
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(palette.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+            }
+        }
+
+        private var clientActions: some View {
+            HStack(spacing: 10) {
+                Menu {
+                    Button(library.isFavorite(collection) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(collection) }
+                    Button("Rename…") { renaming = true }
+                    Button("Merge into another client…") { merging = true }
+                    Button("Show all in Finder") { FileActions.reveal(collection.allFiles) }
+                    Divider()
+                    Button("Hide this client…") { confirmHide = true }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 44, height: 44)
+                        .background(palette.secondaryContainer, in: Circle())
+                        .foregroundStyle(palette.onSecondaryContainer)
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                if let latest = collection.latest {
+                    SplitButton(title: "Open newest", symbol: "arrow.up.forward", action: { FileActions.open(latest) }) {
+                        Button("Open \(latest.name)") { FileActions.open(latest) }
+                        Button("Show in Finder") { FileActions.reveal(latest) }
                         Divider()
-                        Button("Hide this client…") { confirmHide = true }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .bold))
-                            .frame(width: 44, height: 44)
-                            .background(palette.secondaryContainer, in: Circle())
-                            .foregroundStyle(palette.onSecondaryContainer)
-                    }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    if let latest = collection.latest {
-                        SplitButton(title: "Open newest", symbol: "arrow.up.forward", action: { FileActions.open(latest) }) {
-                            Button("Open \(latest.name)") { FileActions.open(latest) }
-                            Button("Show in Finder") { FileActions.reveal(latest) }
-                            Divider()
-                            Button("Prepare delivery for \(collection.name)…") {
-                                Delivery.prepare(name: collection.name, projects: collection.projects, library: library)
-                            }
+                        Button("Prepare delivery for \(collection.name)…") {
+                            Delivery.prepare(name: collection.name, projects: collection.projects, library: library)
                         }
-                        .help(latest.name)
                     }
+                    .help(latest.name)
                 }
             }
         }

@@ -3,270 +3,6 @@ import AppKit
 import QuickLook
 import StrataCore
 
-/// One project as a living timeline, themed with colours taken from its own artwork.
-struct ProjectDetailView: View {
-    let project: ProjectGroup
-    var backTitle: String = "Projects"
-    var onBack: (() -> Void)? = nil
-    @ViewState private var seed: OKLCH?
-
-    var body: some View {
-        DetailContent(project: project, backTitle: backTitle, onBack: onBack)
-            .modifier(ProjectPalette(project: project, seed: $seed))
-            .navigationTitle(project.name)
-    }
-}
-
-/// Ask the timeline to bring a version to the centre of the screen.
-struct FocusRequest: Equatable {
-    let id: String
-    let token = UUID()
-}
-
-/// Actions any version view in the project page can trigger.
-struct VersionActions {
-    var compare: (ProjectFile) -> Void = { _ in }
-    var move: (ProjectFile) -> Void = { _ in }
-}
-
-private struct VersionActionsKey: EnvironmentKey { static let defaultValue = VersionActions() }
-extension EnvironmentValues {
-    var versionActions: VersionActions {
-        get { self[VersionActionsKey.self] }
-        set { self[VersionActionsKey.self] = newValue }
-    }
-}
-
-/// Which two versions the compare sheet opens with.
-struct ComparePair: Identifiable {
-    let left: String
-    let right: String
-    var id: String { left + "|" + right }
-}
-
-private struct DetailContent: View {
-    @EnvironmentObject var library: Library
-    @Environment(\.palette) private var palette
-    let project: ProjectGroup
-    let backTitle: String
-    let onBack: (() -> Void)?
-
-    @ViewState private var selectedID: String?
-    @ViewState private var preview: URL?
-    @ViewState private var revealed = false
-    @ViewState private var playing = false
-    @ViewState private var playTask: Task<Void, Never>?
-    @ViewState private var focus: FocusRequest?
-    @ViewState private var keyMonitor: Any?
-    @ViewState private var comparing: ComparePair?
-    @ViewState private var renaming = false
-    @ViewState private var movingFile: ProjectFile?
-    @ViewState private var choosingClient = false
-
-    private var selected: ProjectFile { project.files.first { $0.id == selectedID } ?? project.latest }
-    private var layout: TimelineLayout { TimelineLayout(versions: project.versions) }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                header.padding(.horizontal, 32).padding(.top, 18)
-                Overview(project: project, selectedID: selected.id) { select($0) }
-                    .padding(.horizontal, 32).padding(.top, 18)
-                TimelineViewport(project: project, layout: layout, selectedID: selected.id, revealed: revealed,
-                                 focus: focus, select: { select($0) }, open: { FileActions.open($0.file) })
-                    .padding(.top, 10)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            InspectorPane(project: project, file: selected,
-                          select: { select($0) }, preview: { preview = $0.file.url })
-                .frame(width: 336)
-        }
-        .background(palette.surface)
-        .environment(\.versionActions, VersionActions(compare: { compare($0) }, move: { movingFile = $0 }))
-        .sheet(item: $comparing) { pair in
-            CompareView(project: project, left: pair.left, right: pair.right)
-                .environment(\.palette, palette)
-        }
-        .sheet(isPresented: $renaming) {
-            NamePrompt(title: "Rename project", initial: project.name) { library.rename(project, to: $0) }
-        }
-        .sheet(item: $movingFile) { file in
-            PickerSheet(title: "Move \(file.file.name) to…",
-                        items: library.projects.filter { $0.id != project.id }.map {
-                            PickItem(id: $0.id, title: $0.name,
-                                     subtitle: [library.collection(containing: $0.id)?.name, "\($0.versions.count) versions"].compactMap { $0 }.joined(separator: " · "),
-                                     file: $0.latest.file)
-                        }) { item in
-                if let target = library.project(id: item.id) { library.move(file.file, toProjectOf: target) }
-            }
-        }
-        .sheet(isPresented: $choosingClient) {
-            PickerSheet(title: "Move \(project.name) to client…",
-                        items: library.collections.map {
-                            PickItem(id: $0.id, title: $0.name, subtitle: "\($0.projects.count) projects", file: $0.latest)
-                        }) { item in
-                if let client = library.collection(id: item.id) { library.assign(project.first.file, to: client) }
-            }
-        }
-        .onAppear {
-            revealed = true
-            installKeys()
-        }
-        .onDisappear {
-            playTask?.cancel()
-            if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
-            keyMonitor = nil
-        }
-        .quickLookPreview($preview)
-    }
-
-    /// Space = Quick Look, ← → = previous / next version. Ignored while typing in a text field.
-    private func installKeys() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let responder = NSApp.keyWindow?.firstResponder
-            if responder is NSText || responder is NSTableView { return event }   // typing, or moving in the sidebar
-            guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return event }
-            switch event.keyCode {
-            case 123: step(-1); return nil
-            case 124: step(1); return nil
-            case 49: preview = preview == nil ? selected.file.url : nil; return nil
-            default: return event
-            }
-        }
-    }
-
-    /// Compares a version with the one before it (or, for the first, with the latest).
-    private func compare(_ file: ProjectFile) {
-        let versions = project.versions
-        let i = versions.firstIndex { $0.id == (file.exportOf ?? file.id) } ?? 0
-        let other = i > 0 ? versions[i - 1] : project.latest
-        comparing = ComparePair(left: other.id, right: file.id)
-    }
-
-    private func select(_ file: ProjectFile) {
-        withAnimation(Motion.standard) { selectedID = file.id }
-        focus = FocusRequest(id: file.exportOf ?? file.id)
-    }
-
-    private func step(_ delta: Int) {
-        let versions = project.versions
-        let current = selected.exportOf ?? selected.id
-        guard let i = versions.firstIndex(where: { $0.id == current }) else { return }
-        let next = min(max(i + delta, 0), versions.count - 1)
-        if next != i || selected.isExport { select(versions[next]) }
-    }
-
-    private var header: some View {
-        HStack(alignment: .bottom, spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
-                if let onBack {
-                    FloatingBack(title: backTitle, action: onBack)
-                        .padding(.bottom, 4)
-                }
-                Text(eyebrow)
-                    .font(.system(size: 11.5, weight: .heavy))
-                    .tracking(1.2)
-                    .foregroundStyle(palette.tertiary)
-                Text(project.name)
-                    .font(.display(42))
-                    .foregroundStyle(palette.onSurface)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text(Format.range(project.first.file.modified, project.latest.file.modified) + folderNote)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(palette.onSurfaceVariant)
-            }
-            Spacer(minLength: 12)
-            HStack(spacing: 10) {
-                if project.versions.count > 1 {
-                    Button { toggleReplay() } label: {
-                        Label(playing ? "Stop" : "Replay", systemImage: playing ? "stop.fill" : "play.fill")
-                            .contentTransition(.symbolEffect(.replace))
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(.horizontal, 20).frame(height: 44)
-                            .background(palette.secondaryContainer, in: Capsule())
-                            .foregroundStyle(palette.onSecondaryContainer)
-                    }
-                    .buttonStyle(PressScale())
-                    .help("Play the project's history from the first version to the latest")
-                }
-                if project.versions.count > 1 {
-                    Button { comparing = ComparePair(left: project.versions[project.versions.count - 2].id, right: project.latest.id) } label: {
-                        Label("Compare", systemImage: "rectangle.split.2x1")
-                            .font(.system(size: 14, weight: .bold))
-                            .padding(.horizontal, 18).frame(height: 44)
-                            .background(palette.tertiaryContainer, in: Capsule())
-                            .foregroundStyle(palette.onTertiaryContainer)
-                    }
-                    .buttonStyle(PressScale())
-                    .help("Compare the two latest versions")
-                }
-                Menu {
-                    Button("Rename project…") { renaming = true }
-                    if let client = library.collection(containing: project.id) {
-                        Button("Remove from \(client.name)") { library.removeFromClient(project) }
-                    }
-                    Button("Move to client…") { choosingClient = true }
-                    Divider()
-                    Button("Show all files in Finder") { FileActions.reveal(project.files.map(\.file)) }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .bold))
-                        .frame(width: 44, height: 44)
-                        .overlay(Circle().strokeBorder(palette.outline, lineWidth: 1))
-                        .foregroundStyle(palette.onSurfaceVariant)
-                        .contentShape(Circle())
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                SplitButton(title: "Open latest", symbol: "arrow.up.forward", action: {
-                    withAnimation(Motion.standard) { selectedID = project.latest.id }
-                    FileActions.open(project.latest.file)
-                }) {
-                    Button("Open \(project.latest.file.name)") { FileActions.open(project.latest.file) }
-                    Button("Show latest in Finder") { FileActions.reveal(project.latest.file) }
-                    Divider()
-                    Button("Prepare delivery…") { Delivery.prepare(name: project.name, projects: [project], library: library) }
-                }
-                .keyboardShortcut(.return, modifiers: .command)
-            }
-        }
-    }
-
-    private var eyebrow: String {
-        let v = project.versions.count, e = project.files.count - project.versions.count
-        var parts = ["\(v) VERSION\(v == 1 ? "" : "S")"]
-        if e > 0 { parts.append("\(e) EXPORT\(e == 1 ? "" : "S")") }
-        if project.hasRecovered { parts.append("RECOVERED AFTER A CRASH") }
-        return parts.joined(separator: "  ·  ")
-    }
-
-    private var folderNote: String {
-        let n = Set(project.files.map(\.file.folder)).count
-        return n > 1 ? "  ·  spread across \(n) folders" : ""
-    }
-
-    private func toggleReplay() {
-        if playing {
-            playTask?.cancel()
-            playing = false
-            return
-        }
-        playing = true
-        playTask = Task { @MainActor in
-            for version in project.versions {
-                if Task.isCancelled { break }
-                select(version)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-            }
-            withAnimation(Motion.standard) { playing = false }
-        }
-    }
-}
-
-// MARK: - Layout
-
 /// Horizontal positions: one card per version, with extra room for long pauses between saves
 /// so time *feels* right, without wasting the screen on empty months.
 struct TimelineLayout {
@@ -707,185 +443,25 @@ struct Overview: View {
 
 // MARK: - Inspector
 
-struct InspectorPane: View {
-    @EnvironmentObject var library: Library
-    @Environment(\.palette) private var palette
-    @Environment(\.versionActions) private var actions
-    @ViewState private var note = ""
-    let project: ProjectGroup
-    let file: ProjectFile
-    let select: (ProjectFile) -> Void
-    let preview: (ProjectFile) -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                ZStack {
-                    Color.clear.aspectRatio(4 / 3, contentMode: .fit)
-                        .overlay(Thumbnail(file: file.file, side: 640))
-                        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                        .shadow(color: palette.primary.opacity(0.25), radius: 18, y: 10)
-                        .id(file.id)
-                        .transition(.asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity),
-                                                removal: .opacity))
-                }
-                .animation(Motion.standard, value: file.id)
-                .onTapGesture { preview(file) }
-
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(counter.0).font(.display(34)).foregroundStyle(palette.primary)
-                        .contentTransition(.numericText())
-                    Text(counter.1).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
-                    Spacer()
-                    if file.id == project.latest.id {
-                        Pill(text: "Newest", fg: palette.onPrimary, bg: palette.primary, icon: "sparkle")
-                    }
-                }
-                .animation(Motion.standard, value: file.id)
-
-                Text(file.file.name)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(palette.onSurface)
-                    .textSelection(.enabled)
-
-                HStack(spacing: 8) {
-                    Button { FileActions.open(file.file) } label: {
-                        Text("Open").font(.system(size: 14, weight: .bold))
-                            .frame(maxWidth: .infinity).frame(height: 44)
-                            .background(palette.primary, in: Capsule())
-                            .foregroundStyle(palette.onPrimary)
-                    }
-                    .buttonStyle(PressScale())
-                    roundButton("eye.fill", "Quick Look (Space)") { preview(file) }
-                    roundButton("folder.fill", "Show in Finder") { FileActions.reveal(file.file) }
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Status").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
-                    StatusGroup(status: file.file.status) { library.setStatus($0, for: file.file) }
-                }
-
-                if !file.isExport && project.versions.count > 1 {
-                    Button { actions.compare(file) } label: {
-                        Label("Compare with the version before", systemImage: "rectangle.split.2x1")
-                            .font(.system(size: 13, weight: .bold))
-                            .frame(maxWidth: .infinity).frame(height: 40)
-                            .background(palette.tertiaryContainer, in: Capsule())
-                            .foregroundStyle(palette.onTertiaryContainer)
-                    }
-                    .buttonStyle(PressScale())
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Note").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
-                    TextField("What changed? “Client wants a bigger logo”…", text: $note, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(2...6)
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.surfaceContainerHigh))
-                        .onChange(of: note) { library.setNote(note, for: file.file) }
-                }
-                .onAppear { note = library.note(for: file.file) }
-                .onChange(of: file.id) { note = library.note(for: file.file) }
-
-                VStack(alignment: .leading, spacing: 11) {
-                    row("calendar", "Saved", Format.full.string(from: file.file.modified))
-                    row("clock.arrow.circlepath", "Created", Format.full.string(from: file.file.created))
-                    row("doc", "Kind", "\(file.file.kind.label) · \(Format.size(file.file.size))")
-                    row("folder", "Where", Format.folder(file.file.path))
-                    row("link", "Linked by", file.reason.label)
-                    if let tool = file.file.xmp?.creatorTool { row("paintbrush.pointed", "Made with", tool) }
-                }
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(palette.surfaceContainer))
-
-                if file.isRecovered {
-                    note("bolt.fill", "Saved by the app after a crash. Same document as the versions around it.",
-                         palette.warningContainer, palette.onWarningContainer)
-                }
-                if let original = file.duplicateOf {
-                    note("plus.square.on.square", "Exact copy of \((original as NSString).lastPathComponent). You can safely delete one.",
-                         palette.surfaceContainerHighest, palette.onSurfaceVariant)
-                }
-                if let source = file.exportOf, let parent = project.files.first(where: { $0.id == source }) {
-                    Button { select(parent) } label: {
-                        Label("Exported from \(parent.file.name)", systemImage: "arrow.turn.left.up")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .background(palette.tertiaryContainer, in: Capsule())
-                            .foregroundStyle(palette.onTertiaryContainer)
-                    }
-                    .buttonStyle(PressScale())
-                }
-            }
-            .padding(22)
-        }
-        .background(palette.surfaceContainerLow)
-        .scrollFade()
-    }
-
-    private var counter: (String, String) {
-        if file.isExport { return ("Export", "") }
-        let i = (project.versions.firstIndex { $0.id == file.id } ?? 0) + 1
-        return (String(format: "%02d", i), "of \(String(format: "%02d", project.versions.count)) versions")
-    }
-
-    private func roundButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .bold))
-                .frame(width: 44, height: 44)
-                .background(palette.secondaryContainer, in: Circle())
-                .foregroundStyle(palette.onSecondaryContainer)
-        }
-        .buttonStyle(PressScale())
-        .help(help)
-    }
-
-    private func row(_ symbol: String, _ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.primary).frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.onSurfaceVariant)
-                Text(value).font(.system(size: 12.5, weight: .medium)).foregroundStyle(palette.onSurface)
-                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func note(_ symbol: String, _ text: String, _ bg: Color, _ fg: Color) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 13, weight: .bold))
-            Text(text).font(.system(size: 12.5, weight: .medium)).fixedSize(horizontal: false, vertical: true)
-        }
-        .foregroundStyle(fg)
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(bg))
-    }
-}
-
 /// Draft → In Review → Sent → Approved → Final, as a connected M3 button group. Click the active one to clear it.
 struct StatusGroup: View {
     @Environment(\.palette) private var palette
     let status: VersionStatus?
     let set: (VersionStatus?) -> Void
+    private let columns = [GridItem(.adaptive(minimum: 88), spacing: 6)]
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(VersionStatus.allCases.enumerated()), id: \.element) { i, s in
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+            ForEach(VersionStatus.allCases, id: \.self) { s in
                 let on = s == status
                 Button { set(on ? nil : s) } label: {
-                    Image(systemName: s.symbol)
-                        .font(.system(size: 12, weight: .bold))
-                        .frame(maxWidth: .infinity).frame(height: 36)
-                        .background(UnevenRoundedRectangle(
-                            topLeadingRadius: on || i == 0 ? 18 : 6, bottomLeadingRadius: on || i == 0 ? 18 : 6,
-                            bottomTrailingRadius: on || i == VersionStatus.allCases.count - 1 ? 18 : 6,
-                            topTrailingRadius: on || i == VersionStatus.allCases.count - 1 ? 18 : 6, style: .continuous)
-                            .fill(on ? palette.tertiary : palette.surfaceContainerHighest))
-                        .foregroundStyle(on ? palette.surface : palette.onSurfaceVariant)
+                    HStack(spacing: 5) {
+                        Image(systemName: on ? "checkmark" : s.symbol).font(.system(size: 10, weight: .bold))
+                        Text(s.rawValue).font(.system(size: 12, weight: on ? .bold : .semibold)).lineLimit(1).fixedSize()
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 32)
+                    .background(Capsule().fill(on ? palette.tertiary : palette.surfaceContainerHighest))
+                    .foregroundStyle(on ? palette.surface : palette.onSurfaceVariant)
                 }
                 .buttonStyle(PressScale())
                 .help(on ? "\(s.rawValue) · click to clear" : "Mark as \(s.rawValue) (saved as a Finder tag)")
@@ -917,5 +493,17 @@ struct VersionMenu: View {
         Divider()
         Button("Move to another project…") { actions.move(file) }
         Button("Remove from this project") { library.detach(file.file) }
+    }
+}
+
+/// Shows "icon + title", or just the icon (with the title as tooltip) when space is tight.
+struct AdaptiveLabel: LabelStyle {
+    var iconOnly: Bool
+    func makeBody(configuration: Configuration) -> some View {
+        if iconOnly {
+            configuration.icon
+        } else {
+            HStack(spacing: 7) { configuration.icon; configuration.title.lineLimit(1) }.fixedSize()
+        }
     }
 }

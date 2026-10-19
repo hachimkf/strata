@@ -71,6 +71,7 @@ struct MenuBarPanel: View {
     @Environment(\.openWindow) private var openWindow
     @ViewState private var query = ""
     @FocusState private var searching: Bool
+    @ObservedObject private var recents = RecentsStore.shared
 
     private struct Row: Identifiable {
         let id: String
@@ -130,8 +131,12 @@ struct MenuBarPanel: View {
                         fileRow(file.file, subtitle: "\(project.name) · \(Format.ago(file.file.modified))", warning: true)
                     }
                 }
+                ForEach([AdobeApp.illustrator, .photoshop].filter { !(recents.byApp[$0] ?? []).isEmpty }) { app in
+                    section("Last opened in \(app.rawValue)")
+                    ForEach((recents.byApp[app] ?? []).prefix(3)) { r in recentRow(r) }
+                }
                 section("Recent projects")
-                ForEach(recentProjects) { row($0) }
+                ForEach(recentProjects.prefix(4)) { row($0) }
                 section("Just saved")
                 ForEach(justSaved, id: \.path) { fileRow($0, subtitle: "\(Format.ago($0.modified)) · \(Format.shortFolder($0.path))", warning: false) }
             }
@@ -140,7 +145,10 @@ struct MenuBarPanel: View {
         .padding(12)
         .frame(width: 360)
         .background(palette.surfaceContainerLow)
-        .onAppear { searching = true }
+        .onAppear {
+            searching = true
+            recents.refresh()
+        }
     }
 
     private var header: some View {
@@ -232,6 +240,30 @@ struct MenuBarPanel: View {
         }
         .buttonStyle(MenuRowStyle())
         .contextMenu { Button("Show in Finder") { FileActions.reveal(f) } }
+    }
+
+    private func recentRow(_ r: RecentFile) -> some View {
+        Button { RecentsStore.open(r) } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if let f = library.file(at: r.path) { Thumbnail(file: f, side: 72) }
+                    else { Image(nsImage: NSWorkspace.shared.icon(forFile: r.path)).resizable() }
+                }
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(r.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                    Text(r.opened.map { "Opened \(Format.ago($0))" } ?? Format.shortFolder(r.path))
+                        .font(.system(size: 10.5)).foregroundStyle(palette.onSurfaceVariant).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(MenuRowStyle())
+        .help("Open in \(r.app.rawValue)")
+        .contextMenu { Button("Show in Finder") { FileActions.reveal(path: r.path) } }
     }
 
     private var footer: some View {

@@ -64,6 +64,10 @@ public struct ProjectGroup: Identifiable, Hashable, Sendable {
         return out
     }
     public var hasRecovered: Bool { files.contains { $0.isRecovered } }
+    /// The newest version marked Final, else the newest marked Approved (what you'd send the client).
+    public var approved: ProjectFile? {
+        versions.last { $0.file.status == .final } ?? versions.last { $0.file.status == .approved }
+    }
     public var duplicateCount: Int { files.filter(\.isDuplicate).count }
     public var needsReview: Bool { hasRecovered || duplicateCount > 0 }
     public var isVideo: Bool { files.contains { $0.file.kind.isVideoFamily } }
@@ -117,18 +121,25 @@ public enum Grouper {
 
         let tokens = files.map { NameNormalizer.tokens(for: $0.name) }
         let keys = files.map { NameNormalizer.key(for: $0.name) }
+        // Only truly unnamed files ("Untitled-16", "Artboard 1") or crash recoveries may join a document
+        // by its Adobe ID alone; a named file ("Post 11 12", "Square as a signature") is its own work.
+        let placeholder = files.map { NameNormalizer.isPlaceholder($0.name) }
 
         // Adobe IDs prove two files share history, not that they are the same job: designers often
         // Save As (or duplicate in Finder) the current file to start the next one. So an ID link also
         // needs related names. Crash recoveries keep their name; generically named files
         // ("Untitled-3 (Recovered).ai", "export-01.png") attach to their nearest named sibling.
         func gap(_ a: Int, _ b: Int) -> TimeInterval { abs(files[a].modified.timeIntervalSince(files[b].modified)) }
-        func linkRelated(_ members: [Int], _ r: LinkReason, minSimilarity: Double) {
+        // A version keeps its name: only files whose names match once version markers are removed
+        // ("logo v2", "logo final (Recovered)", "logo copy") are versions of each other.
+        func sameName(_ a: Int, _ b: Int) -> Bool { keys[a] != nil && keys[a] == keys[b] }
+
+        func linkRelated(_ members: [Int], _ r: LinkReason) {
             guard members.count > 1, members.count <= 400 else { return }
             var matched = Set<Int>()
             let named = members.filter { keys[$0] != nil }
             for x in 0..<named.count {
-                for y in (x + 1)..<named.count where NameNormalizer.similarity(tokens[named[x]], tokens[named[y]]) >= minSimilarity {
+                for y in (x + 1)..<named.count where sameName(named[x], named[y]) {
                     link(named[x], named[y], r)
                     matched.formUnion([named[x], named[y]])
                 }
@@ -137,19 +148,19 @@ public enum Grouper {
             // never glue two different jobs together.
             for i in members where !matched.contains(i) {
                 guard let nearest = named.filter({ $0 != i }).min(by: { gap(i, $0) < gap(i, $1) }) else { continue }
-                if keys[i] == nil || files[i].isRecovered { link(i, nearest, r) }
+                if placeholder[i] || files[i].isRecovered { link(i, nearest, r) }
             }
         }
 
         // 1. Same DocumentID: copies, renames and crash recoveries of one document.
         var byDoc: [String: [Int]] = [:]
         for (i, f) in files.enumerated() { if let id = f.xmp?.documentID { byDoc[id, default: []].append(i) } }
-        for (_, m) in byDoc { linkRelated(m, .sameDocument, minSimilarity: 0.34) }
+        for (_, m) in byDoc { linkRelated(m, .sameDocument) }
 
         // 2. Same OriginalDocumentID: the whole Save As family. Weaker, so names must agree more.
         var byOriginal: [String: [Int]] = [:]
         for (i, f) in files.enumerated() { if let id = f.xmp?.originalDocumentID { byOriginal[id, default: []].append(i) } }
-        for (_, m) in byOriginal { linkRelated(m, .sameOriginalDocument, minSimilarity: 0.5) }
+        for (_, m) in byOriginal { linkRelated(m, .sameOriginalDocument) }
 
         // 3. DerivedFrom points at the exact document a file was saved or exported from.
         //    Exports (PDF, PNG…) attach to that source; Save As copies follow the rules above.
@@ -159,18 +170,17 @@ public enum Grouper {
             for id in f.xmp?.derivedFromIDs ?? [] {
                 guard let candidates = byDocID[id]?.filter({ $0 != i }), !candidates.isEmpty else { continue }
                 if f.kind.isSource {
-                    let similar = candidates.filter { NameNormalizer.similarity(tokens[$0], tokens[i]) >= 0.5 }
+                    let similar = candidates.filter { sameName($0, i) }
                     if !similar.isEmpty { similar.forEach { link($0, i, .exportedFrom) }; continue }
-                    if keys[i] == nil, let nearest = candidates.min(by: { gap(i, $0) < gap(i, $1) }) { link(nearest, i, .exportedFrom) }
+                    if placeholder[i] || f.isRecovered, let nearest = candidates.min(by: { gap(i, $0) < gap(i, $1) }) { link(nearest, i, .exportedFrom) }
                 } else {
-                    // One source only. A specifically named export ("Velora Logo.png") must look like its
-                    // source, since the source may itself be a renamed duplicate of another job's file.
+                    // One source only. A generically named export ("Artboard 1.png") joins its source;
+                    // a named one only joins a source with the same name ("Cup Sky Blue.png" exported from
+                    // "Cup.psd" is a different piece of work, not a version of the cup).
                     var pool = candidates
-                    if keys[i] != nil {
-                        let similar = candidates.filter { keys[$0] == nil || NameNormalizer.similarity(tokens[$0], tokens[i]) >= 0.34 }
-                        if !similar.isEmpty { pool = similar }
-                        else if candidates.count == 1, gap(i, candidates[0]) < idTimeWindow { pool = candidates }
-                        else { continue }
+                    if !placeholder[i] {
+                        pool = candidates.filter { placeholder[$0] || sameName($0, i) }
+                        if pool.isEmpty { continue }
                     }
                     let before = pool.filter { files[$0].modified <= f.modified.addingTimeInterval(60) }
                     let pick = (before.isEmpty ? pool : before).max { files[$0].modified < files[$1].modified }!
@@ -184,7 +194,7 @@ public enum Grouper {
         //    it's a naming convention, not one project: split those by their nearest named parent folder.
         var byKey: [String: [Int]] = [:]
         for (i, k) in keys.enumerated() { if let k { byKey[k, default: []].append(i) } }
-        var structuralKeys = Set<String>()
+        var structuralKeys = Set<String>()   // names repeated across many folders (kept for diagnostics)
         for (k, m) in byKey where m.count > 1 {
             let folders = Set(m.map { files[$0].folder })
             guard folders.count >= structuralFolderCount else {
@@ -203,28 +213,6 @@ public enum Grouper {
                 let all = (byContext.values.first ?? []) + noContext
                 for i in all.dropFirst() { link(all[0], i, .sameName) }
             }
-        }
-
-        // 5. Name is the same plus one extra word ("atlas logo" vs "atlas logo sketch"), only when that
-        //    shorter name has a single possible match, so different projects don't chain together.
-        //    A one-word name only links when the extra word is generic ("atlas" -> "atlas logo").
-        var supersets: [String: [(key: String, extra: String)]] = [:]
-        for k in byKey.keys {
-            let words = k.split(separator: " ").map(String.init)
-            guard words.count >= 2 else { continue }
-            for (i, extra) in words.enumerated() {
-                var rest = words; rest.remove(at: i)
-                let sub = rest.joined(separator: " ")
-                if byKey[sub] != nil { supersets[sub, default: []].append((k, extra)) }
-            }
-        }
-        var subsetCount: [String: Int] = [:]
-        for (_, sups) in supersets { for s in sups { subsetCount[s.key, default: 0] += 1 } }
-        for (sub, sups) in supersets where sups.count == 1 && subsetCount[sups[0].key] == 1 {
-            if structuralKeys.contains(sub) || structuralKeys.contains(sups[0].key) { continue }
-            let single = !sub.contains(" ")
-            if single && !NameNormalizer.weak.contains(sups[0].extra) { continue }
-            if let a = byKey[sub]?.first, let b = byKey[sups[0].key]?.first { link(a, b, .similarName) }
         }
 
         // 6. The designer's own corrections.

@@ -60,6 +60,10 @@ public struct ScanResult: Sendable {
     public let files: [CreativeFile]
     public let duration: TimeInterval
     public let xmpReads: Int
+    /// Folders macOS wouldn't let Strata read (privacy permission, damaged folder…).
+    public var unreadable: [String] = []
+    public var skippedCodeProjects = 0
+    public var skippedSequenceFiles = 0
 }
 
 /// Walks folders and collects creative files with their metadata. Never writes to scanned folders.
@@ -69,11 +73,47 @@ public final class Scanner: @unchecked Sendable {
     /// Folders (and everything inside) that are never scanned.
     public var excludedFolders: [String] = []
 
+    /// A folder containing one of these is a code project (an app's own image assets aren't design work).
+    static let codeProjectMarkers = [
+        ".git", "package.json", "Package.swift", "Podfile", "build.gradle", "settings.gradle", "pubspec.yaml",
+        "Cargo.toml", "go.mod", "pyproject.toml", "requirements.txt", "Gemfile", "composer.json", "CMakeLists.txt",
+        "project.yml", ".xcodeproj", "AndroidManifest.xml",
+    ]
+
     static let skippedFolderNames: Set<String> = [
         "node_modules", ".git", "Library", "Caches", "DerivedData", "Pods", ".Trash", "venv", ".venv",
         "__pycache__", "build", "dist", ".build", "Adobe Premiere Pro Auto-Save", "Media Cache Files",
         "Media Cache", "Peak Files", "Adobe After Effects Auto-Save",
+        // App data that lives in Documents but isn't anyone's design work.
+        "SoftMaker", "Microsoft User Data", "Zoom", "WhatsApp", "Steam", "Unity", "Blackmagic Design",
+        "Native Instruments", "Logic", "GarageBand", "iMovie Library", "Final Cut Backups",
     ]
+
+    static func isCodeProject(_ dir: URL) -> Bool {
+        let fm = FileManager.default
+        if codeProjectMarkers.contains(where: { fm.fileExists(atPath: dir.appendingPathComponent($0).path) }) { return true }
+        // Xcode projects are folders named *.xcodeproj
+        let items = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
+        return items.contains { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }
+    }
+
+    /// Folders of rendered frames ("frame-0001.png" … "frame-0240.png"): one image sequence, not design files.
+    static func renderSequenceFolders(_ found: [(URL, FileKind, Int64, Date, Date, [String])]) -> Set<String> {
+        var byFolder: [String: [String]] = [:]
+        for (url, kind, _, _, _, _) in found where kind == .image {
+            byFolder[url.deletingLastPathComponent().path, default: []].append(url.lastPathComponent.lowercased())
+        }
+        var out = Set<String>()
+        for (folder, names) in byFolder where names.count >= 24 {
+            var stems: [String: Int] = [:]
+            for n in names {
+                let stem = n.replacingOccurrences(of: "[0-9]+", with: "#", options: .regularExpression)
+                stems[stem, default: 0] += 1
+            }
+            if let top = stems.values.max(), Double(top) / Double(names.count) >= 0.8 { out.insert(folder) }
+        }
+        return out
+    }
 
     public init(cache: MetadataCache) { self.cache = cache }
 
@@ -82,17 +122,24 @@ public final class Scanner: @unchecked Sendable {
         var found: [(URL, FileKind, Int64, Date, Date, [String])] = []
         let excluded = excludedFolders.map { ($0 as NSString).standardizingPath }
         var seen = Set<String>()
+        let unreadable = PathList()
+        var codeProjects = 0
         let keys: [URLResourceKey] = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .creationDateKey, .contentModificationDateKey, .tagNamesKey]
 
         for root in roots {
             guard let walker = FileManager.default.enumerator(
                 at: root, includingPropertiesForKeys: keys,
                 options: [.skipsHiddenFiles, .skipsPackageDescendants],
-                errorHandler: { _, _ in true }) else { continue }
+                errorHandler: { url, _ in unreadable.add(url.path); return true }) else {
+                unreadable.add(root.path)
+                continue
+            }
             for case let url as URL in walker {
                 guard let v = try? url.resourceValues(forKeys: Set(keys)) else { continue }
                 if v.isDirectory == true {
-                    if Self.skippedFolderNames.contains(url.lastPathComponent) || excluded.contains(url.standardizedFileURL.path) {
+                    if Self.skippedFolderNames.contains(url.lastPathComponent) || excluded.contains(url.standardizedFileURL.path)
+                        || Self.isCodeProject(url) {
+                        if Self.isCodeProject(url) { codeProjects += 1 }
                         walker.skipDescendants()
                     }
                     continue
@@ -105,6 +152,14 @@ public final class Scanner: @unchecked Sendable {
                 let modified = v.contentModificationDate ?? Date.distantPast
                 found.append((url, kind, size, v.creationDate ?? modified, modified, v.tagNames ?? []))
             }
+        }
+
+        // Drop render sequences.
+        let sequences = Self.renderSequenceFolders(found)
+        let beforeSequences = found.count
+        if !sequences.isEmpty {
+            found.removeAll { item in item.1 == .image && sequences.contains(item.0.deletingLastPathComponent().path) }
+            seen = Set(found.map { $0.0.standardizedFileURL.path })
         }
 
         // Read XMP for new / changed files in parallel.
@@ -129,7 +184,9 @@ public final class Scanner: @unchecked Sendable {
         }
         cache.prune(keeping: seen)
         cache.save()
-        return ScanResult(files: files.compactMap { $0 }, duration: Date().timeIntervalSince(started), xmpReads: reads.value)
+        return ScanResult(files: files.compactMap { $0 }, duration: Date().timeIntervalSince(started), xmpReads: reads.value,
+                          unreadable: unreadable.items, skippedCodeProjects: codeProjects,
+                          skippedSequenceFiles: beforeSequences - found.count)
     }
 
     /// SHA-256 of the file contents, cached. Only used to confirm exact duplicates of equal size.
@@ -150,4 +207,11 @@ final class AtomicCounter: @unchecked Sendable {
     private let lock = NSLock()
     func increment() { lock.lock(); n += 1; lock.unlock() }
     var value: Int { lock.lock(); defer { lock.unlock() }; return n }
+}
+
+final class PathList: @unchecked Sendable {
+    private var list: [String] = []
+    private let lock = NSLock()
+    func add(_ p: String) { lock.lock(); if !list.contains(p) && list.count < 200 { list.append(p) }; lock.unlock() }
+    var items: [String] { lock.lock(); defer { lock.unlock() }; return list }
 }

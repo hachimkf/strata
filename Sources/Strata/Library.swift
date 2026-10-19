@@ -15,10 +15,13 @@ final class Library: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var lastScan: Date?
     @Published private(set) var fileCount = 0
+    @Published private(set) var health = IndexHealth()
     @Published private(set) var folders: [URL]
     @Published private(set) var overrides: Overrides
     /// A short message shown at the bottom of the window ("Moved to Trash", "Copied #FF6B4A").
     @Published var toast: String?
+    /// Whether the current toast offers Undo.
+    @Published var toastUndo = false
 
     private var fileIndex: [String: CreativeFile] = [:]
     private let visual = VisualIndex(fileURL: VisualIndex.defaultURL())
@@ -59,7 +62,13 @@ final class Library: ObservableObject {
             let result = Grouper.group(scan.files, roots: roots, hasher: scanner.contentHash, overrides: overrides)
             let catalog = Collector.collect(result, roots: roots, overrides: overrides)
             scanner.cache.save()
-            await MainActor.run { self.apply(catalog, fileCount: scan.files.count) }
+            await MainActor.run {
+                self.apply(catalog, fileCount: scan.files.count)
+                self.health = IndexHealth(lastScan: Date(), duration: scan.duration, files: scan.files.count,
+                                          unreadable: scan.unreadable, codeProjects: scan.skippedCodeProjects,
+                                          sequenceFiles: scan.skippedSequenceFiles,
+                                          missingCorrections: self.missingCorrectionCount())
+            }
 
             // Then gather stray projects and client fragments by how their artwork looks.
             // Fingerprints are cached, so after the first run this takes about a second.
@@ -99,6 +108,14 @@ final class Library: ObservableObject {
             hiddenCollections = catalog.hidden
             standalone = catalog.standalone
         }
+    }
+
+    /// Corrections that point at files which no longer exist (moved or deleted outside Strata).
+    private func missingCorrectionCount() -> Int {
+        let o = overrides
+        let paths = Set(o.links.flatMap { $0 } + o.clientLinks.flatMap { $0 } + o.detached + o.clientDetached
+                        + Array(o.notes.keys) + Array(o.favorites))
+        return paths.filter { !FileManager.default.fileExists(atPath: $0) }.count
     }
 
     // MARK: Lookup (ids are file paths, so a project is still found after its files change)
@@ -142,10 +159,26 @@ final class Library: ObservableObject {
 
     // MARK: Corrections
 
-    private func correct(_ message: String? = nil, _ change: (inout Overrides) -> Void) {
+    private func correct(_ message: String? = nil, rescan needsRescan: Bool = true, _ change: (inout Overrides) -> Void) {
+        undoStack.append(overrides)
+        if undoStack.count > 50 { undoStack.removeFirst() }
         change(&overrides)
         overrides.save(to: Overrides.defaultURL())
-        if let message { show(message) }
+        if let message { show(message, undo: true) }
+        if needsRescan { rescan() }
+    }
+
+    // MARK: Undo
+
+    /// Every correction (move, merge, rename, hide, favourite) can be undone, newest first.
+    private var undoStack: [Overrides] = []
+    var canUndo: Bool { !undoStack.isEmpty }
+
+    func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        overrides = previous
+        overrides.save(to: Overrides.defaultURL())
+        show("Undone")
         rescan()
     }
 
@@ -227,6 +260,29 @@ final class Library: ObservableObject {
 
     func resetCorrections() { correct("All corrections cleared") { o in o = Overrides() } }
 
+    // MARK: Favorites
+
+    func isFavorite(_ project: ProjectGroup) -> Bool { project.files.contains { overrides.favorites.contains($0.file.path) } }
+    func isFavorite(_ client: Client) -> Bool { client.allFiles.contains { overrides.favorites.contains($0.path) } }
+
+    func toggleFavorite(_ project: ProjectGroup) {
+        let on = isFavorite(project)
+        correct(on ? "Removed \(project.name) from Favorites" : "Added \(project.name) to Favorites", rescan: false) { o in
+            if on { for f in project.files { o.favorites.remove(f.file.path) } } else { o.favorites.insert(project.first.file.path) }
+        }
+    }
+
+    func toggleFavorite(_ client: Client) {
+        let on = isFavorite(client)
+        guard let anchor = client.allFiles.min(by: { $0.modified < $1.modified }) else { return }
+        correct(on ? "Removed \(client.name) from Favorites" : "Added \(client.name) to Favorites", rescan: false) { o in
+            if on { for f in client.allFiles { o.favorites.remove(f.path) } } else { o.favorites.insert(anchor.path) }
+        }
+    }
+
+    var favoriteClients: [Client] { collections.filter(isFavorite) }
+    var favoriteProjects: [ProjectGroup] { projects.filter(isFavorite) }
+
     // MARK: Notes & status
 
     func note(for file: CreativeFile) -> String { overrides.notes[file.path] ?? "" }
@@ -272,8 +328,9 @@ final class Library: ObservableObject {
 
     // MARK: Toasts & notifications
 
-    func show(_ message: String) {
+    func show(_ message: String, undo: Bool = false) {
         toastTask?.cancel()
+        toastUndo = undo
         withAnimation(Motion.standard) { toast = message }
         toastTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 3_200_000_000)
@@ -309,4 +366,15 @@ final class Library: ObservableObject {
     static func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
+}
+
+struct IndexHealth {
+    var lastScan: Date?
+    var duration: TimeInterval = 0
+    var files = 0
+    var unreadable: [String] = []
+    var codeProjects = 0
+    var sequenceFiles = 0
+    var missingCorrections = 0
+    var ok: Bool { unreadable.isEmpty }
 }

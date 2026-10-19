@@ -163,6 +163,8 @@ struct SplitButton<MenuContent: View>: View {
             Button(action: action) {
                 Label(title, systemImage: symbol)
                     .font(.system(size: 14, weight: .bold))
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.leading, 20).padding(.trailing, 14).frame(height: 44)
                     .background(UnevenRoundedRectangle(topLeadingRadius: 22, bottomLeadingRadius: 22,
                                                        bottomTrailingRadius: 6, topTrailingRadius: 6, style: .continuous)
@@ -195,23 +197,26 @@ struct ExtendedFAB: View {
     let title: String
     let symbol: String
     var shortcut: String? = nil
+    /// Compact: a small round button that shows its label only while hovered.
+    var compact = false
     let action: () -> Void
     @ViewState private var hovering = false
 
     var body: some View {
+        let expanded = !compact || hovering
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: symbol).font(.system(size: 16, weight: .heavy))
-                Text(title).font(.system(size: 14.5, weight: .heavy))
-                if let shortcut {
+                Image(systemName: symbol).font(.system(size: compact ? 15 : 16, weight: .heavy))
+                if expanded { Text(title).font(.system(size: 14.5, weight: .heavy)).lineLimit(1).fixedSize() }
+                if expanded, let shortcut {
                     Text(shortcut)
                         .font(.system(size: 11.5, weight: .bold))
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(palette.onTertiaryContainer.opacity(0.12), in: Capsule())
                 }
             }
-            .padding(.horizontal, 22).frame(height: 56)
-            .background(MorphRect(radius: hovering ? 28 : 18).fill(palette.tertiaryContainer))
+            .padding(.horizontal, expanded ? 22 : 0).frame(minWidth: compact ? 46 : 56).frame(height: compact ? 46 : 56)
+            .background(MorphRect(radius: compact ? 23 : (hovering ? 28 : 18)).fill(palette.tertiaryContainer))
             .foregroundStyle(palette.onTertiaryContainer)
             .shadow(color: .black.opacity(0.18), radius: hovering ? 18 : 10, y: hovering ? 8 : 4)
             .contentShape(Rectangle())
@@ -226,10 +231,18 @@ struct ExtendedFAB: View {
 struct Toast: View {
     @Environment(\.palette) private var palette
     let message: String
+    var undo: (() -> Void)? = nil
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark.circle.fill").foregroundStyle(palette.primary)
             Text(message).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+            if let undo {
+                Button("Undo", action: undo)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(palette.primary)
+                    .padding(.leading, 6)
+            }
         }
         .padding(.horizontal, 18).padding(.vertical, 13)
         .background(Capsule().fill(palette.onSurface))

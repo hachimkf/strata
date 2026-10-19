@@ -23,6 +23,8 @@ public struct Overrides: Codable, Equatable, Sendable {
     public var hiddenFolders: [String] = []
     /// A note written on a version.
     public var notes: [String: String] = [:]
+    /// Starred clients and projects (by any of their files).
+    public var favorites: Set<String> = []
 
     public init() {}
 
@@ -38,6 +40,7 @@ public struct Overrides: Codable, Equatable, Sendable {
         hiddenClients = try c.decodeIfPresent(Set<String>.self, forKey: .hiddenClients) ?? []
         hiddenFolders = try c.decodeIfPresent([String].self, forKey: .hiddenFolders) ?? []
         notes = try c.decodeIfPresent([String: String].self, forKey: .notes) ?? [:]
+        favorites = try c.decodeIfPresent(Set<String>.self, forKey: .favorites) ?? []
     }
 
     public var isEmpty: Bool { self == Overrides() }

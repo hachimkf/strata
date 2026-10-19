@@ -208,7 +208,7 @@ private struct DetailContent: View {
                 }
                 Button("Move to client…") { choosingClient = true }
                 Divider()
-                Button("Show all files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+                Button("Show in Finder") { FileActions.show(project) }
             } label: {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
             }
@@ -549,7 +549,8 @@ struct DetailsPanel: View {
             Thumbnail(file: file.file, side: 200)
                 .frame(width: 76, height: 76)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onTapGesture { preview(file) }
+                .onTapGesture(count: 2) { FileActions.open(file.file) }
+                .help("Double-click to open · Space for Quick Look")
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     Text(file.file.name).font(.system(size: 16, weight: .bold)).foregroundStyle(palette.onSurface)

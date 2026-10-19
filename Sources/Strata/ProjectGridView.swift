@@ -44,7 +44,7 @@ struct ProjectGridView: View {
                                     .buttonStyle(PressScale())
                                     .materialContextMenu {
                                         if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
-                                        Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
+                                        Button("Show in Finder") { FileActions.show(collection) }
                                     }
                             }
                         }
@@ -67,7 +67,7 @@ struct ProjectGridView: View {
                                     .materialContextMenu {
                                         Button("Open Latest Version") { FileActions.open(project.latest.file) }
                                         Button("Show Latest in Finder") { FileActions.reveal(project.latest.file) }
-                                        Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+                                        Button("Show in Finder") { FileActions.show(project) }
                                     }
                             }
                         }
@@ -437,6 +437,7 @@ struct LooseFilesView: View {
     @Environment(\.palette) private var palette
     let files: [CreativeFile]
     @ViewState private var preview: URL?
+    @ViewState private var selectedFile: String?
     private let columns = [GridItem(.adaptive(minimum: 160, maximum: 210), spacing: 14, alignment: .top)]
 
     var body: some View {
@@ -444,7 +445,7 @@ struct LooseFilesView: View {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Loose files").font(.display(44)).foregroundStyle(palette.onSurface)
-                    Text("\(files.count.formatted()) files with no other version found · click to preview, double-click to open")
+                    Text("\(files.count.formatted()) files with no other version found · click to select, Space to preview, double-click to open")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(palette.onSurfaceVariant)
                 }
@@ -464,10 +465,13 @@ struct LooseFilesView: View {
                             .padding(.horizontal, 4)
                         }
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainer))
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(selectedFile == file.path ? palette.secondaryContainer : palette.surfaceContainer))
+                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(selectedFile == file.path ? palette.primary : .clear, lineWidth: 2))
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { FileActions.open(file) }
-                        .onTapGesture { preview = file.url }
+                        .simultaneousGesture(TapGesture().onEnded { selectedFile = file.path })
                         .materialContextMenu {
                             Button("Open") { FileActions.open(file) }
                             Button("Show in Finder") { FileActions.reveal(file) }
@@ -483,6 +487,7 @@ struct LooseFilesView: View {
         .background(palette.surface)
         .scrollFade()
         .quickLookPreview($preview)
+        .spaceToQuickLook(selectedFile.map { URL(fileURLWithPath: $0) }, preview: $preview)
     }
 }
 
@@ -515,7 +520,7 @@ struct CollectionListRow: View {
         .onHover { hovering = $0 }
         .materialContextMenu {
             if let latest = collection.latest { Button("Open Newest File") { FileActions.open(latest) } }
-            Button("Show All Files in Finder") { FileActions.reveal(collection.allFiles) }
+            Button("Show in Finder") { FileActions.show(collection) }
         }
     }
 }
@@ -558,7 +563,7 @@ struct ProjectListRow: View {
         .draggable(project.latest.file.url)
         .materialContextMenu {
             Button("Open Latest Version") { FileActions.open(project.latest.file) }
-            Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+            Button("Show in Finder") { FileActions.show(project) }
         }
     }
 }

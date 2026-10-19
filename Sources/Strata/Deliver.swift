@@ -97,6 +97,7 @@ struct BrandKitView: View {
     @ViewState private var colors: [OKLCH] = []
     @ViewState private var loadingColors = true
     @ViewState private var preview: URL?
+    @ViewState private var selectedLogo: String?
 
     private let logoColumns = [GridItem(.adaptive(minimum: 140, maximum: 180), spacing: 12, alignment: .top)]
 
@@ -146,13 +147,14 @@ struct BrandKitView: View {
             group("Logos", logos.isEmpty ? "No file with “logo” in its name" : "\(logos.count) logo files · click to preview, double-click to open") {
                 LazyVGrid(columns: logoColumns, alignment: .leading, spacing: 12) {
                     ForEach(logos) { f in
-                        FileTile(file: f) { preview = f.url }
+                        FileTile(file: f, selected: selectedLogo == f.path) { selectedLogo = f.path }
                             .draggable(f.url)
                     }
                 }
             }
         }
         .quickLookPreview($preview)
+        .spaceToQuickLook(selectedLogo.map { URL(fileURLWithPath: $0) }, preview: $preview)
         .task(id: collection.id) { await loadColors() }
     }
 

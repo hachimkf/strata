@@ -314,7 +314,7 @@ struct Sidebar: View {
                                         Button(library.isFavorite(client) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(client) }
                                         Button("Rename…") { renamingClient = client }
                                         Button("Merge into another client…") { mergingClient = client }
-                                        Button("Show all in Finder") { FileActions.reveal(client.allFiles) }
+                                        Button("Show in Finder") { FileActions.show(client) }
                                         Divider()
                                         Button("Hide") { library.hide(client) }
                                     }
@@ -526,7 +526,7 @@ struct Sidebar: View {
             Button("Remove from \(client.name)") { library.removeFromClient(project) }
         }
         Divider()
-        Button("Show all files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+        Button("Show in Finder") { FileActions.show(project) }
     }
 
     /// Dropping files (from Strata or Finder) onto a project files them as versions of it.

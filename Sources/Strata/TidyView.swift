@@ -10,6 +10,7 @@ struct TidyView: View {
     @ViewState private var chosen: Set<String> = []
     @ViewState private var confirming = false
     @ViewState private var preview: URL?
+    @ViewState private var lastClicked: URL?
     @ViewState private var primed = false
 
     struct Candidate: Identifiable {
@@ -95,6 +96,7 @@ struct TidyView: View {
         .background(palette.surface)
         .scrollFade()
         .quickLookPreview($preview)
+        .spaceToQuickLook(lastClicked, preview: $preview)
         .onAppear { primed = true }
         .confirmationDialog("Move \(selected.count) files to the Trash?", isPresented: $confirming) {
             Button("Move to Trash", role: .destructive) {
@@ -149,7 +151,10 @@ struct TidyView: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: on ? 20 : 12, style: .continuous).fill(on ? palette.secondaryContainer : .clear))
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation(Motion.fast) { if on { chosen.remove(c.id) } else { chosen.insert(c.id) } } }
+        .onTapGesture {
+            lastClicked = c.file.url
+            withAnimation(Motion.fast) { if on { chosen.remove(c.id) } else { chosen.insert(c.id) } }
+        }
         .help("\(c.project.name) · \(c.keep)")
         .materialContextMenu {
             Button("Show copy in Finder") { FileActions.reveal(c.file) }
@@ -165,7 +170,6 @@ struct TidyView: View {
             }
             .frame(width: 44, height: 33)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .onTapGesture { preview = URL(fileURLWithPath: path) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.system(size: 9.5, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(emphasis ? palette.primary : palette.onSurfaceVariant)

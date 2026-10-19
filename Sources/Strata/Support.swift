@@ -132,9 +132,77 @@ enum Format {
 
 enum FileActions {
     static func open(_ file: CreativeFile) { NSWorkspace.shared.open(file.url) }
+    /// Selects the file in its folder: one Finder window.
     static func reveal(_ file: CreativeFile) { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
-    static func reveal(_ files: [CreativeFile]) { NSWorkspace.shared.activateFileViewerSelecting(files.map(\.url)) }
+    /// Several files: only the newest is shown, so Finder never opens a window per folder.
+    static func reveal(_ files: [CreativeFile]) {
+        if let newest = files.max(by: { $0.modified < $1.modified }) { reveal(newest) }
+    }
     static func reveal(path: String) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+
+    /// A project in Finder: its latest file, selected, in one window.
+    static func show(_ project: ProjectGroup) { reveal(project.latest.file) }
+
+    /// A client in Finder: its own folder (the one holding most of its work), opened in one window.
+    static func show(_ client: Client) {
+        guard let folder = mainFolder(of: client.allFiles) else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: folder, isDirectory: true))
+    }
+
+    /// The folder most of these files live in, widened to the parent while that still holds most of them
+    /// ("Velora Coffee" rather than "Velora Coffee/Exports"), but never a watched root or the home folder.
+    static func mainFolder(of files: [CreativeFile]) -> String? {
+        guard !files.isEmpty else { return nil }
+        var count: [String: Int] = [:]
+        for f in files { count[f.folder, default: 0] += 1 }
+        guard var folder = count.max(by: { $0.value < $1.value })?.key else { return nil }
+        let home = NSHomeDirectory()
+        let stops = Set(["Desktop", "Documents", "Downloads", "Movies", "Pictures"].map { home + "/" + $0 } + [home, "/"])
+        while true {
+            let parent = (folder as NSString).deletingLastPathComponent
+            guard !stops.contains(parent), !stops.contains(folder) else { break }
+            let inParent = files.filter { $0.path.hasPrefix(parent + "/") }.count
+            let inFolder = files.filter { $0.path.hasPrefix(folder + "/") }.count
+            guard inParent > inFolder, Double(inParent) >= Double(files.count) * 0.6 else { break }
+            folder = parent
+        }
+        return folder
+    }
+}
+
+extension View {
+    /// Space bar previews the selected file with Quick Look (ignored while typing or moving in the sidebar).
+    func spaceToQuickLook(_ url: URL?, preview: Binding<URL?>) -> some View {
+        modifier(SpacePreview(url: url, preview: preview))
+    }
+}
+
+private struct SpacePreview: ViewModifier {
+    let url: URL?
+    @Binding var preview: URL?
+    @ViewState private var monitor: Any?
+    @ViewState private var current: URL?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                current = url
+                guard monitor == nil else { return }
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    let responder = NSApp.keyWindow?.firstResponder
+                    guard event.keyCode == 49, !(responder is NSText), !(responder is NSTableView),
+                          event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                          let target = current else { return event }
+                    preview = preview == nil ? target : nil
+                    return nil
+                }
+            }
+            .onChange(of: url) { current = url }
+            .onDisappear {
+                if let monitor { NSEvent.removeMonitor(monitor) }
+                monitor = nil
+            }
+    }
 }
 
 // MARK: - Build without Xcode

@@ -54,6 +54,7 @@ struct RecentsView: View {
     @Environment(\.palette) private var palette
     let showProject: (String) -> Void
     @ViewState private var preview: URL?
+    @ViewState private var selectedRecent: String?
 
     private let columns = [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 14, alignment: .top)]
 
@@ -94,7 +95,7 @@ struct RecentsView: View {
                         }
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 14) {
                             ForEach(store.byApp[app] ?? []) { recent in
-                                RecentCard(recent: recent, showProject: showProject) { preview = recent.url }
+                                RecentCard(recent: recent, showProject: showProject, selected: selectedRecent == recent.id) { selectedRecent = recent.id }
                             }
                         }
                     }
@@ -105,6 +106,7 @@ struct RecentsView: View {
         .background(palette.surface)
         .scrollFade()
         .quickLookPreview($preview)
+        .spaceToQuickLook(selectedRecent.flatMap { id in store.byApp.values.joined().first { $0.id == id }?.url }, preview: $preview)
         .onAppear { store.refresh() }
     }
 }
@@ -114,7 +116,8 @@ private struct RecentCard: View {
     @Environment(\.palette) private var palette
     let recent: RecentFile
     let showProject: (String) -> Void
-    let preview: () -> Void
+    var selected = false
+    let select: () -> Void
 
     var body: some View {
         let file = library.file(at: recent.path)
@@ -131,7 +134,6 @@ private struct RecentCard: View {
             }
             .aspectRatio(4 / 3, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .onTapGesture(perform: preview)
             Text(recent.name).font(.system(size: 12.5, weight: .bold)).foregroundStyle(palette.onSurface)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Text(recent.opened.map { "Opened \(Format.ago($0))" } ?? Format.folder(recent.path))
@@ -155,7 +157,11 @@ private struct RecentCard: View {
             }
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainerLow))
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(selected ? palette.secondaryContainer : palette.surfaceContainerLow))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(selected ? palette.primary : .clear, lineWidth: 2))
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) { RecentsStore.open(recent) }
+        .simultaneousGesture(TapGesture().onEnded(select))
         .materialContextMenu {
             Button("Open in \(recent.app.rawValue)") { RecentsStore.open(recent) }
             Button("Show in Finder") { FileActions.reveal(path: recent.path) }

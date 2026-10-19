@@ -129,6 +129,7 @@ struct CollectionPage: View {
         let onBack: () -> Void
         let openProject: (ProjectGroup) -> Void
         @ViewState private var preview: URL?
+        @ViewState private var selectedFile: String?
         @ViewState private var tab: ClientTab = .projects
         @ViewState private var renaming = false
         @ViewState private var merging = false
@@ -164,6 +165,7 @@ struct CollectionPage: View {
                 FloatingBack(title: backTitle, action: onBack).padding(.leading, 26).padding(.top, 18)
             }
             .quickLookPreview($preview)
+            .spaceToQuickLook(selectedFile.map { URL(fileURLWithPath: $0) }, preview: $preview)
             .sheet(isPresented: $renaming) {
                 NamePrompt(title: "Rename client", initial: collection.name) { library.rename(collection, to: $0) }
             }
@@ -203,7 +205,7 @@ struct CollectionPage: View {
                             .draggable(project.latest.file.url)
                             .materialContextMenu {
                                 Button("Open Latest Version") { FileActions.open(project.latest.file) }
-                                Button("Show All Files in Finder") { FileActions.reveal(project.files.map(\.file)) }
+                                Button("Show in Finder") { FileActions.show(project) }
                                 Divider()
                                 Button("Remove from \(collection.name)") { library.removeFromClient(project) }
                             }
@@ -215,7 +217,7 @@ struct CollectionPage: View {
                 section("Other files", "\(collection.singles.count) files with a single version")
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     ForEach(collection.singles) { file in
-                        FileTile(file: file) { preview = file.url }
+                        FileTile(file: file, selected: selectedFile == file.path) { selectedFile = file.path }
                             .draggable(file.url)
                     }
                 }
@@ -259,7 +261,7 @@ struct CollectionPage: View {
                     Button(library.isFavorite(collection) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(collection) }
                     Button("Rename…") { renaming = true }
                     Button("Merge into another client…") { merging = true }
-                    Button("Show all in Finder") { FileActions.reveal(collection.allFiles) }
+                    Button("Show in Finder") { FileActions.show(collection) }
                     Divider()
                     Button("Hide this client…") { confirmHide = true }
                 } label: {
@@ -294,10 +296,12 @@ struct CollectionPage: View {
 }
 
 /// A single file: thumbnail, name, date. Click to preview, double-click to open.
+/// Click to select (Space previews it), double-click to open, like Finder.
 struct FileTile: View {
     @Environment(\.palette) private var palette
     let file: CreativeFile
-    let preview: () -> Void
+    var selected = false
+    let select: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -316,10 +320,11 @@ struct FileTile: View {
             .padding(.horizontal, 4)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.surfaceContainer))
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(selected ? palette.secondaryContainer : palette.surfaceContainer))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(selected ? palette.primary : .clear, lineWidth: 2))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { FileActions.open(file) }
-        .onTapGesture(perform: preview)
+        .simultaneousGesture(TapGesture().onEnded(select))
         .materialContextMenu {
             Button("Open") { FileActions.open(file) }
             Button("Show in Finder") { FileActions.reveal(file) }

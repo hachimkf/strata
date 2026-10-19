@@ -1,0 +1,4 @@
+#!/bin/sh
+# Quit a running Strata so the new version can replace it.
+pkill -x Strata 2>/dev/null || true
+exit 0

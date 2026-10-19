@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import CryptoKit
 
-/// Checks the public releases repo for a newer Strata, downloads the DMG over HTTPS,
+/// Checks the public releases repo for a newer Strata, downloads the installer over HTTPS,
 /// verifies its SHA-256 against the checksum published with the release, then opens it.
 @MainActor
 final class Updater: ObservableObject {
@@ -14,7 +14,7 @@ final class Updater: ObservableObject {
     struct Release: Equatable {
         let version: String
         let notes: String
-        let dmg: URL
+        let installer: URL
         let checksum: URL?
         let page: URL
     }
@@ -64,9 +64,9 @@ final class Updater: ObservableObject {
                     .flatMap(URL.init(string:))
                     .flatMap { Self.trusted($0) ? $0 : nil }
             }
-            guard let dmg = asset(".dmg") else { message = "The latest release has no installer."; return }
+            guard let installer = asset(".pkg") ?? asset(".dmg") else { message = "The latest release has no installer."; return }
             latest = Release(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV")),
-                             notes: json["body"] as? String ?? "", dmg: dmg, checksum: asset(".sha256"), page: page)
+                             notes: json["body"] as? String ?? "", installer: installer, checksum: asset(".sha256"), page: page)
             message = updateAvailable ? nil : "You're up to date (\(current))."
         } catch {
             message = "Couldn't check for updates: \(error.localizedDescription)"
@@ -78,7 +78,7 @@ final class Updater: ObservableObject {
         downloading = true
         defer { downloading = false }
         do {
-            let (tmp, _) = try await URLSession.shared.download(from: release.dmg)
+            let (tmp, _) = try await URLSession.shared.download(from: release.installer)
             if let checksumURL = release.checksum {
                 let (sumData, _) = try await URLSession.shared.data(from: checksumURL)
                 let expected = String(decoding: sumData, as: UTF8.self).split(separator: " ").first.map(String.init)?.lowercased() ?? ""
@@ -90,10 +90,13 @@ final class Updater: ObservableObject {
                 }
             }
             let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-            let target = downloads.appendingPathComponent("Strata-\(release.version).dmg")
+            let ext = release.installer.pathExtension.isEmpty ? "pkg" : release.installer.pathExtension
+            let target = downloads.appendingPathComponent("Strata-\(release.version).\(ext)")
             try? FileManager.default.removeItem(at: target)
             try FileManager.default.moveItem(at: tmp, to: target)
-            message = "Downloaded. Drag Strata into Applications to replace this version, then reopen it."
+            message = ext == "pkg"
+                ? "Downloaded and verified. The installer will quit Strata, update it and reopen it."
+                : "Downloaded. Drag Strata into Applications to replace this version, then reopen it."
             NSWorkspace.shared.open(target)
         } catch {
             message = "Download failed: \(error.localizedDescription)"

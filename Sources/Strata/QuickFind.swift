@@ -8,8 +8,9 @@ struct Shortcut: Equatable {
     var keyCode: UInt32
     var modifiers: UInt32
 
-    // ⇧⌘Space: free on macOS (⌃⌥Space switches keyboard language, ⌘Space / ⌥⌘Space zoom in Adobe apps, ⌥Space is ChatGPT).
-    static let defaultSearch = Shortcut(keyCode: UInt32(kVK_Space), modifiers: UInt32(cmdKey | shiftKey))
+    // ⇧⌘B ("browse"): Space combinations clash with Siri ("Hold ⌘ Space"), keyboard switching (⌃⌥Space)
+    // and Adobe zoom (⌘Space / ⌥⌘Space).
+    static let defaultSearch = Shortcut(keyCode: UInt32(kVK_ANSI_B), modifiers: UInt32(cmdKey | shiftKey))
 
     static func load() -> Shortcut {
         let d = UserDefaults.standard

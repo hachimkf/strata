@@ -5,7 +5,7 @@
 #
 # 1. bumps CFBundleShortVersionString / CFBundleVersion in Resources/Info.plist
 # 2. runs the self-checks, builds a universal (Apple Silicon + Intel) app, signs it (hardened runtime)
-# 3. makes build/Strata-<version>.dmg (+ .sha256, which the in-app updater verifies)
+# 3. makes the installer build/Strata-<version>.pkg (+ .sha256, which the in-app updater verifies)
 # 4. notarizes and staples when signed with a Developer ID and $STRATA_NOTARY_PROFILE is set
 #    (create once: xcrun notarytool store-credentials strata --apple-id … --team-id … )
 # 5. unless --local: commits, tags and pushes the source, then creates the GitHub release on
@@ -46,33 +46,24 @@ swift build --product strata-selftest >/dev/null
 echo "▸ Universal build"
 Scripts/build-app.sh --universal
 
-APP=build/Strata.app
-DMG="build/Strata-$NEW.dmg"
-IDENTITY=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=\(Developer ID Application.*\)/\1/p' | head -1)
+echo "▸ Installer package"
+Scripts/make-pkg.sh
+PKG="build/Strata-$NEW.pkg"
+SIGNED_PKG=$(pkgutil --check-signature "$PKG" | grep -q "Developer ID Installer" && echo 1 || echo 0)
 
-echo "▸ Disk image"
-STAGE=build/dmg
-rm -rf "$STAGE" "$DMG"
-mkdir -p "$STAGE"
-cp -R "$APP" "$STAGE/"
-ln -s /Applications "$STAGE/Applications"
-hdiutil create -quiet -volname "Strata $NEW" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-rm -rf "$STAGE"
-[[ -n "$IDENTITY" ]] && codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-
-if [[ -n "$IDENTITY" && -n "${STRATA_NOTARY_PROFILE:-}" ]]; then
+if [[ $SIGNED_PKG == 1 && -n "${STRATA_NOTARY_PROFILE:-}" ]]; then
   echo "▸ Notarizing (a few minutes)"
-  xcrun notarytool submit "$DMG" --keychain-profile "$STRATA_NOTARY_PROFILE" --wait
-  xcrun stapler staple "$DMG"
+  xcrun notarytool submit "$PKG" --keychain-profile "$STRATA_NOTARY_PROFILE" --wait
+  xcrun stapler staple "$PKG"
   NOTARIZED=1
 else
   NOTARIZED=0
-  echo "  Not notarized: needs a Developer ID Application certificate and STRATA_NOTARY_PROFILE."
+  echo "  Not notarized: needs Developer ID Application + Installer certificates and STRATA_NOTARY_PROFILE."
 fi
 
-(cd build && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
-echo "▸ $(pwd)/$DMG"
-cat "$DMG.sha256"
+(cd build && shasum -a 256 "$(basename "$PKG")" > "$(basename "$PKG").sha256")
+echo "▸ $(pwd)/$PKG"
+cat "$PKG.sha256"
 
 if [[ $LOCAL == 1 ]]; then
   echo "✓ Local build only (--local): nothing committed or published."
@@ -83,7 +74,7 @@ fi
 if [[ $NOTARIZED == 0 ]]; then
   NOTES="$NOTES
 
-First launch: right-click Strata in Applications › Open (this build isn't notarized by Apple yet)."
+How to install: download Strata-$NEW.pkg, then right-click it › Open › Open (this build isn't notarized by Apple yet, so a plain double-click is blocked the first time). The installer puts Strata in Applications and opens it."
 fi
 
 echo "▸ Source: commit, tag, push"
@@ -94,5 +85,5 @@ git push -q origin HEAD
 git push -q -f origin "v$NEW"
 
 echo "▸ GitHub release on $RELEASES_REPO"
-gh release create "v$NEW" "$DMG" "$DMG.sha256" --repo "$RELEASES_REPO" --title "Strata $NEW" --notes "$NOTES"
+gh release create "v$NEW" "$PKG" "$PKG.sha256" --repo "$RELEASES_REPO" --title "Strata $NEW" --notes "$NOTES"
 echo "✓ Released Strata $NEW"

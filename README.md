@@ -14,7 +14,7 @@ Strata reads your files and never moves, renames or edits them on its own. The o
 - **Brand kit** — each client's colours (from artwork), fonts (from Adobe files) and logo files.
 - **Delivery** — zip the latest version + exports of a project or a whole client.
 - **Tidy up** — exact duplicates and old crash copies, moved to the Trash only after you confirm.
-- **Find anything** — ⌘K in the app; a floating Spotlight-style search from any app (default ⇧⌘Space, set your own in Settings); crash alerts when a "(Recovered)" file appears.
+- **Find anything** — ⌘K in the app; a floating Spotlight-style search from any app (default ⇧⌘B, set your own in Settings); crash alerts when a "(Recovered)" file appears.
 - **Settings** — light / dark / system, accent colour, artwork colours, reduce motion, folders, hidden clients.
 
 ## Build & run
@@ -75,7 +75,7 @@ Scripts/release.sh current "" --local       # build the signed DMG only, publish
 ```
 
 The script bumps the version, runs the self-checks, builds a universal app (Apple Silicon + Intel) with the
-hardened runtime, makes `build/Strata-<version>.dmg` plus a `.sha256`, then commits, tags and publishes a GitHub
+hardened runtime, makes the installer `build/Strata-<version>.pkg` (welcome page, branded background, installs into Applications and opens Strata) plus a `.sha256`, then commits, tags and publishes a GitHub
 release on `hachimkf/strata-releases`. The app checks that repo once a day and verifies the checksum before
 opening an update.
 

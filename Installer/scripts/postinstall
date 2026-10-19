@@ -1,0 +1,8 @@
+#!/bin/sh
+# Open Strata for the person at the screen (the installer itself runs as root).
+CONSOLE_USER=$(stat -f%Su /dev/console)
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+  CONSOLE_UID=$(id -u "$CONSOLE_USER")
+  launchctl asuser "$CONSOLE_UID" sudo -u "$CONSOLE_USER" /usr/bin/open -a "/Applications/Strata.app" || true
+fi
+exit 0

@@ -243,6 +243,7 @@ struct Sidebar: View {
     @Binding var selection: SidebarItem
     @ViewState private var filter = ""
     @AppStorage("clientsAlphabetical") private var clientsAZ = false
+    @AppStorage("clientsSectionOpen") private var clientsOpen = true
     @ViewState private var expanded: Set<String> = []
     @ViewState private var renamingClient: Client?
     @ViewState private var renamingProject: ProjectGroup?
@@ -291,7 +292,11 @@ struct Sidebar: View {
                             }
                         }
                     }
+                    // A plain section with our own header row: macOS's section header adds its own collapse
+                    // arrow and folds on a click anywhere on the line, which clashed with the A–Z button.
                     Section {
+                        clientsHeader
+                        if clientsOpen {
                         ForEach(clients) { client in
                             DisclosureGroup(isExpanded: expansion(client)) {
                                 ForEach(projects(of: client)) { project in
@@ -316,21 +321,6 @@ struct Sidebar: View {
                                     .dropDestination(for: URL.self) { urls, _ in drop(urls, onClient: client) }
                             }
                         }
-                    } header: {
-                        HStack {
-                            Text("Clients")
-                            Spacer()
-                            Button {
-                                clientsAZ.toggle()
-                            } label: {
-                                Image(systemName: "textformat.abc")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .frame(width: 24, height: 18)
-                                    .background(Capsule().fill(clientsAZ ? palette.primary.opacity(0.25) : .clear))
-                                    .foregroundStyle(clientsAZ ? palette.primary : palette.onSurfaceVariant)
-                            }
-                            .buttonStyle(.plain)
-                            .help(clientsAZ ? "Sorted A–Z · click for most recent first" : "Sorted by most recent · click to sort A–Z")
                         }
                     }
 
@@ -393,6 +383,42 @@ struct Sidebar: View {
     }
 
     private var query: String { filter.trimmingCharacters(in: .whitespaces).lowercased() }
+
+    /// "Clients ›" with the arrow right by the name (only the arrow folds the list), and an A–Z pill on the right.
+    private var clientsHeader: some View {
+        HStack(spacing: 6) {
+            Text("Clients")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            Button {
+                withAnimation(Motion.standard) { clientsOpen.toggle() }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .rotationEffect(.degrees(clientsOpen ? 90 : 0))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(clientsOpen ? "Hide clients" : "Show clients")
+            Spacer()
+            Button {
+                withAnimation(Motion.fast) { clientsAZ.toggle() }
+            } label: {
+                Text("A–Z")
+                    .font(.system(size: 11.5, weight: .bold))
+                    .padding(.horizontal, 12).frame(height: 24)
+                    .background(Capsule().fill(clientsAZ ? palette.primary : .clear))
+                    .overlay(Capsule().stroke(clientsAZ ? .clear : palette.outline.opacity(0.7), lineWidth: 1))
+                    .foregroundStyle(clientsAZ ? palette.onPrimary : palette.onSurfaceVariant)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(clientsAZ ? "Sorted A–Z · click for most recent first" : "Sorted by most recent · click to sort A–Z")
+        }
+        .padding(.top, 10)
+    }
 
     private var clients: [Client] {
         var list = library.collections

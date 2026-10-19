@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Strata</string>
+	<key>CFBundleDisplayName</key>
+	<string>Strata</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.lakhloufi.strata</string>
+	<key>CFBundleExecutable</key>
+	<string>Strata</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.graphics-design</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticTermination</key>
+	<false/>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Strata reads your Desktop to find versions of your design files. It never moves or changes them.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Strata reads your Documents to find versions of your design files. It never moves or changes them.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Strata reads your Downloads to find versions of your design files. It never moves or changes them.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Strata reads folders you add on external drives to find versions of your design files.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Strata reads folders you add on network drives to find versions of your design files.</string>
+</dict>
+</plist>

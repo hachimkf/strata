@@ -113,8 +113,12 @@ final class Library: ObservableObject {
     /// Corrections that point at files which no longer exist (moved or deleted outside Strata).
     private func missingCorrectionCount() -> Int {
         let o = overrides
-        let paths = Set(o.links.flatMap { $0 } + o.clientLinks.flatMap { $0 } + o.detached + o.clientDetached
-                        + Array(o.notes.keys) + Array(o.favorites))
+        var paths = Set(o.links.flatMap { $0 })
+        paths.formUnion(o.clientLinks.flatMap { $0 })
+        paths.formUnion(o.detached)
+        paths.formUnion(o.clientDetached)
+        paths.formUnion(o.notes.keys)
+        paths.formUnion(o.favorites)
         return paths.filter { !FileManager.default.fileExists(atPath: $0) }.count
     }
 

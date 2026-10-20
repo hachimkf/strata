@@ -114,7 +114,6 @@ private struct MaterialMenuOverlay: View {
             .clipShape(RoundedRectangle(cornerRadius: 20))
             .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
             .environment(\.insideMaterialMenu, true)
-            .buttonStyle(MaterialMenuActionStyle(menus: menus))
             .accessibilityLabel("Actions")
             .offset(x: origin.x, y: origin.y)
         }
@@ -162,17 +161,31 @@ extension MaterialMenu where Label == Text {
     }
 }
 
-private struct MaterialMenuActionStyle: PrimitiveButtonStyle {
-    let menus: MaterialMenus
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .modifier(MaterialMenuRow(role: configuration.role))
-            .onTapGesture { configuration.trigger(); menus.dismiss() }
-            .focusable()
-            .onKeyPress(.return) { configuration.trigger(); menus.dismiss(); return .handled }
-            .onKeyPress(.space) { configuration.trigger(); menus.dismiss(); return .handled }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { configuration.trigger(); menus.dismiss() }
+/// Native button behavior with explicit dismissal, for pointer, keyboard and accessibility actions.
+struct MaterialMenuAction<Label: View>: View {
+    @Environment(\.materialMenus) private var menus
+    let role: ButtonRole?
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    init(role: ButtonRole? = nil, action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) {
+        self.role = role
+        self.action = action
+        self.label = label
+    }
+
+    var body: some View {
+        Button(role: role) {
+            menus?.dismiss()
+            action()
+        } label: { label() }
+        .buttonStyle(MaterialMenuRowStyle())
+    }
+}
+
+extension MaterialMenuAction where Label == Text {
+    init(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) {
+        self.init(role: role, action: action, label: { Text(title) })
     }
 }
 

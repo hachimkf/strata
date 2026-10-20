@@ -4,6 +4,7 @@ import StrataCore
 
 @main
 struct StrataApp: App {
+    @NSApplicationDelegateAdaptor(StrataAppDelegate.self) private var appDelegate
     @StateObject private var library = Library()
     @StateObject private var quickFind = QuickFindState.shared
     @AppStorage(Prefs.accentKey) private var accent = 0
@@ -17,6 +18,7 @@ struct StrataApp: App {
     var body: some Scene {
         Window("Strata", id: "main") {
             ContentView()
+                .background(MainWindowReference())
                 .environmentObject(library)
                 .environmentObject(quickFind)
                 .frame(minWidth: 1000, minHeight: 640)
@@ -95,5 +97,27 @@ struct MenuBarLabel: View {
                 Self.didSetup = true
                 setup()
             }
+    }
+}
+
+/// Dock clicks and Finder launches must restore the existing window, including minimized projects.
+@MainActor
+final class StrataAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        WindowOpener.showMain()
+        return false
+    }
+}
+
+struct MainWindowReference: NSViewRepresentable {
+    func makeNSView(context: Context) -> WindowReferenceView { WindowReferenceView() }
+    func updateNSView(_ nsView: WindowReferenceView, context: Context) {}
+
+    final class WindowReferenceView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { WindowOpener.window = window }
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }

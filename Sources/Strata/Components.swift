@@ -100,12 +100,11 @@ struct ShapeAvatar: View {
     var size: CGFloat = 26
 
     var body: some View {
-        let spec = ShapeSpec.forName(name)
         ZStack {
             if let file { Thumbnail(file: file, side: size * 3) }
         }
         .frame(width: size, height: size)
-        .clipShape(MorphShape(from: spec, to: spec, progress: 0))
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.25, style: .continuous))
     }
 }
 

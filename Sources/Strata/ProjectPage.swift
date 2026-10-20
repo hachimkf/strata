@@ -201,14 +201,14 @@ private struct DetailContent: View {
             }
             Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1)
             MaterialMenu {
-                Button(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
-                Button("Rename project…") { renaming = true }
+                MaterialMenuAction(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
+                MaterialMenuAction("Rename project…") { renaming = true }
                 if let client {
-                    Button("Remove from \(client.name)") { library.removeFromClient(project) }
+                    MaterialMenuAction("Remove from \(client.name)") { library.removeFromClient(project) }
                 }
-                Button("Move to client…") { choosingClient = true }
+                MaterialMenuAction("Move to client…") { choosingClient = true }
                 Divider()
-                Button("Show in Finder") { FileActions.show(project) }
+                MaterialMenuAction("Show in Finder") { FileActions.show(project) }
             } label: {
                 Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.onSurfaceVariant)
             }
@@ -574,12 +574,12 @@ struct DetailsPanel: View {
         let status = file.file.status
         return MaterialMenu {
             ForEach(VersionStatus.allCases, id: \.self) { s in
-                Button { library.setStatus(s, for: file.file) } label: {
+                MaterialMenuAction { library.setStatus(s, for: file.file) } label: {
                     if status == s { Label(s.rawValue, systemImage: "checkmark") } else { Text(s.rawValue) }
                 }
             }
             Divider()
-            Button("No status") { library.setStatus(nil, for: file.file) }
+            MaterialMenuAction("No status") { library.setStatus(nil, for: file.file) }
         } label: {
             HStack(spacing: 7) {
                 Circle().fill(StatusColor.of(status, palette, scheme)).frame(width: 9, height: 9)

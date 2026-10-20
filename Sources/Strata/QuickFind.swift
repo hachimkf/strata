@@ -126,14 +126,16 @@ final class QuickFindState: ObservableObject {
 @MainActor
 enum WindowOpener {
     static var open: (() -> Void)?
+    static weak var window: NSWindow?
 
     static func showMain() {
-        NSApp.activate(ignoringOtherApps: true)
-        if let window = NSApp.windows.first(where: { $0.title == "Strata" && $0.canBecomeMain }) {
+        if let window {
+            if window.isMiniaturized { window.deminiaturize(nil) }
             window.makeKeyAndOrderFront(nil)
         } else {
             open?()
         }
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

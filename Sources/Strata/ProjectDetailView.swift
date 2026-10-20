@@ -467,21 +467,21 @@ struct VersionMenu: View {
     let file: ProjectFile
 
     var body: some View {
-        Button("Open") { FileActions.open(file.file) }
-        Button("Show in Finder") { FileActions.reveal(file.file) }
-        if !file.isExport { Button("Compare with the version before") { actions.compare(file) } }
+        MaterialMenuAction("Open") { FileActions.open(file.file) }
+        MaterialMenuAction("Show in Finder") { FileActions.reveal(file.file) }
+        if !file.isExport { MaterialMenuAction("Compare with the version before") { actions.compare(file) } }
         MaterialMenu("Status") {
             ForEach(VersionStatus.allCases, id: \.self) { s in
-                Button { library.setStatus(s, for: file.file) } label: {
+                MaterialMenuAction { library.setStatus(s, for: file.file) } label: {
                     if file.file.status == s { Label(s.rawValue, systemImage: "checkmark") } else { Text(s.rawValue) }
                 }
             }
             Divider()
-            Button("None") { library.setStatus(nil, for: file.file) }
+            MaterialMenuAction("None") { library.setStatus(nil, for: file.file) }
         }
         Divider()
-        Button("Move to another project…") { actions.move(file) }
-        Button("Remove from this project") { library.detach(file.file) }
+        MaterialMenuAction("Move to another project…") { actions.move(file) }
+        MaterialMenuAction("Remove from this project") { library.detach(file.file) }
     }
 }
 

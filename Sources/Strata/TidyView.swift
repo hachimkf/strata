@@ -157,9 +157,9 @@ struct TidyView: View {
         }
         .help("\(c.project.name) · \(c.keep)")
         .materialContextMenu {
-            Button("Show copy in Finder") { FileActions.reveal(c.file) }
-            Button("Show kept file in Finder") { FileActions.reveal(path: c.keepPath) }
-            Button("Quick Look") { preview = c.file.url }
+            MaterialMenuAction("Show copy in Finder") { FileActions.reveal(c.file) }
+            MaterialMenuAction("Show kept file in Finder") { FileActions.reveal(path: c.keepPath) }
+            MaterialMenuAction("Quick Look") { preview = c.file.url }
         }
     }
 

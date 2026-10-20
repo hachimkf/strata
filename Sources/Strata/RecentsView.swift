@@ -163,8 +163,8 @@ private struct RecentCard: View {
         .onTapGesture(count: 2) { RecentsStore.open(recent) }
         .simultaneousGesture(TapGesture().onEnded(select))
         .materialContextMenu {
-            Button("Open in \(recent.app.rawValue)") { RecentsStore.open(recent) }
-            Button("Show in Finder") { FileActions.reveal(path: recent.path) }
+            MaterialMenuAction("Open in \(recent.app.rawValue)") { RecentsStore.open(recent) }
+            MaterialMenuAction("Show in Finder") { FileActions.reveal(path: recent.path) }
         }
     }
 }

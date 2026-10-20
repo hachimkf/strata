@@ -68,7 +68,6 @@ enum MenuBarIcon {
 struct MenuBarPanel: View {
     @EnvironmentObject var library: Library
     @Environment(\.palette) private var palette
-    @Environment(\.openWindow) private var openWindow
     @ViewState private var query = ""
     @FocusState private var searching: Bool
     @ObservedObject private var recents = RecentsStore.shared
@@ -213,7 +212,7 @@ struct MenuBarPanel: View {
         }
         .buttonStyle(MenuRowStyle())
         .help("Open \(r.file.name)")
-        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(r.file) } }
+        .materialContextMenu { MaterialMenuAction("Show in Finder") { FileActions.reveal(r.file) } }
     }
 
     private func fileRow(_ f: CreativeFile, subtitle: String, warning: Bool) -> some View {
@@ -239,7 +238,7 @@ struct MenuBarPanel: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(MenuRowStyle())
-        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(f) } }
+        .materialContextMenu { MaterialMenuAction("Show in Finder") { FileActions.reveal(f) } }
     }
 
     private func recentRow(_ r: RecentFile) -> some View {
@@ -263,13 +262,13 @@ struct MenuBarPanel: View {
         }
         .buttonStyle(MenuRowStyle())
         .help("Open in \(r.app.rawValue)")
-        .materialContextMenu { Button("Show in Finder") { FileActions.reveal(path: r.path) } }
+        .materialContextMenu { MaterialMenuAction("Show in Finder") { FileActions.reveal(path: r.path) } }
     }
 
     private var footer: some View {
         HStack(spacing: 6) {
             footerButton("macwindow", "Open Strata") {
-                openWindow(id: "main")
+                WindowOpener.showMain()
                 NSApp.activate(ignoringOtherApps: true)
             }
             footerButton("magnifyingglass", "Find… \(HotKey.shared.shortcut.display)") {

@@ -76,9 +76,9 @@ struct CompareView: View {
             Text(project.name).font(.display(22)).foregroundStyle(palette.onSurface).lineLimit(1).truncationMode(.middle)
             Spacer()
             MaterialMenu {
-                Button("Swap A and B") { swap(&leftID, &rightID) }
-                Button("Open A: \(left.file.name)") { FileActions.open(left.file) }
-                Button("Open B: \(right.file.name)") { FileActions.open(right.file) }
+                MaterialMenuAction("Swap A and B") { swap(&leftID, &rightID) }
+                MaterialMenuAction("Open A: \(left.file.name)") { FileActions.open(left.file) }
+                MaterialMenuAction("Open B: \(right.file.name)") { FileActions.open(right.file) }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 14, weight: .bold))
                     .frame(width: 40, height: 40)

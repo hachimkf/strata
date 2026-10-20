@@ -142,18 +142,7 @@ struct Palette {
 
     /// File-type accent that harmonises with this palette (same tone, its own hue).
     func kind(_ ext: String) -> (fg: Color, bg: Color) {
-        let hue: Double
-        switch ext {
-        case "AI", "EPS", "AIT", "SVG": hue = 55
-        case "PSD", "PSB": hue = 245
-        case "INDD": hue = 355
-        case "AEP", "PRPROJ", "MP4", "MOV", "M4V": hue = 300
-        case "PDF": hue = 25
-        default: hue = 155
-        }
-        let k = OKLCH(l: 0.5, c: 0.14, h: hue)
-        return dark ? (k.tone(0.85, chroma: 0.11), k.tone(0.32, chroma: 0.06))
-                    : (k.tone(0.42, chroma: 0.14), k.tone(0.93, chroma: 0.045))
+        (onSurfaceVariant, surfaceContainerHigh)
     }
 }
 
@@ -287,10 +276,9 @@ final class PaletteStore {
 // MARK: - Typography
 
 extension Font {
-    /// Display titles: SF Pro, bold and condensed. Editorial and confident rather than playful
-    /// (M3 Expressive "emphasized" type, translated to Apple's variable font axes).
+    /// A restrained hierarchy: bold page titles and readable semibold section names.
     static func display(_ size: CGFloat) -> Font {
-        .system(size: size, weight: size >= 30 ? .heavy : .bold).width(.condensed)
+        .system(size: size, weight: size >= 30 ? .bold : .semibold)
     }
 }
 

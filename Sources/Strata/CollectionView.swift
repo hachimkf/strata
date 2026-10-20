@@ -13,7 +13,6 @@ struct CollectionCard: View {
 
     var body: some View {
         Face(collection: collection, hovering: hovering)
-            .artworkPalette(collection.latest, name: collection.name)
             .scaleEffect(hovering ? 1.015 : 1)
             .opacity(appeared ? 1 : 0)
             .offset(y: appeared ? 0 : 22)
@@ -42,12 +41,12 @@ struct CollectionCard: View {
                 ZStack(alignment: .topLeading) {
                     // Folder tab
                     UnevenRoundedRectangle(topLeadingRadius: 10, topTrailingRadius: 10, style: .continuous)
-                        .fill(palette.primary)
+                        .fill(palette.surfaceContainerHighest)
                         .frame(width: 58, height: 14)
                         .offset(x: 12, y: -8)
                     FileStack(files: covers, fanned: hovering)
                         .padding(8)
-                        .background(MorphRect(radius: 16).fill(palette.primaryContainer))
+                        .background(MorphRect(radius: 16).fill(palette.surfaceContainerHigh))
                 }
                 .padding(.top, 10).padding(.horizontal, 4)
 
@@ -66,14 +65,14 @@ struct CollectionCard: View {
 
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 4) {
-                        Pill(text: Format.date(collection.lastModified), fg: palette.onPrimary, bg: palette.primary, icon: "clock.fill")
+                        Pill(text: Format.date(collection.lastModified), fg: palette.onSurfaceVariant, bg: palette.surfaceContainerHigh, icon: "clock.fill")
                         ForEach(collection.extensions.prefix(2), id: \.self) { KindPill(ext: $0) }
                     }
                     HStack(spacing: 4) {
-                        Pill(text: Format.date(collection.lastModified), fg: palette.onPrimary, bg: palette.primary, icon: "clock.fill")
+                        Pill(text: Format.date(collection.lastModified), fg: palette.onSurfaceVariant, bg: palette.surfaceContainerHigh, icon: "clock.fill")
                         if let ext = collection.extensions.first { KindPill(ext: ext) }
                     }
-                    Pill(text: Format.date(collection.lastModified), fg: palette.onPrimary, bg: palette.primary, icon: "clock.fill")
+                    Pill(text: Format.date(collection.lastModified), fg: palette.onSurfaceVariant, bg: palette.surfaceContainerHigh, icon: "clock.fill")
                 }
                 .padding(.horizontal, 4).padding(.bottom, 3)
             }
@@ -204,10 +203,10 @@ struct CollectionPage: View {
                             .buttonStyle(PressScale())
                             .draggable(project.latest.file.url)
                             .materialContextMenu {
-                                Button("Open Latest Version") { FileActions.open(project.latest.file) }
-                                Button("Show in Finder") { FileActions.show(project) }
+                                MaterialMenuAction("Open Latest Version") { FileActions.open(project.latest.file) }
+                                MaterialMenuAction("Show in Finder") { FileActions.show(project) }
                                 Divider()
-                                Button("Remove from \(collection.name)") { library.removeFromClient(project) }
+                                MaterialMenuAction("Remove from \(collection.name)") { library.removeFromClient(project) }
                             }
                     }
                 }
@@ -244,7 +243,7 @@ struct CollectionPage: View {
                         .foregroundStyle(palette.tertiary)
                         .lineLimit(1)
                     Text(collection.name)
-                        .font(.display(46))
+                        .font(.display(32))
                         .foregroundStyle(palette.onSurface)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(Format.range(collection.firstModified, collection.lastModified))
@@ -258,12 +257,12 @@ struct CollectionPage: View {
         private var clientActions: some View {
             HStack(spacing: 10) {
                 MaterialMenu {
-                    Button(library.isFavorite(collection) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(collection) }
-                    Button("Rename…") { renaming = true }
-                    Button("Merge into another client…") { merging = true }
-                    Button("Show in Finder") { FileActions.show(collection) }
+                    MaterialMenuAction(library.isFavorite(collection) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(collection) }
+                    MaterialMenuAction("Rename…") { renaming = true }
+                    MaterialMenuAction("Merge into another client…") { merging = true }
+                    MaterialMenuAction("Show in Finder") { FileActions.show(collection) }
                     Divider()
-                    Button("Hide this client…") { confirmHide = true }
+                    MaterialMenuAction("Hide this client…") { confirmHide = true }
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .bold))
@@ -288,7 +287,7 @@ struct CollectionPage: View {
 
         private func section(_ title: String, _ subtitle: String) -> some View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(title).font(.display(22)).foregroundStyle(palette.onSurface)
+                Text(title).font(.display(18)).foregroundStyle(palette.onSurface)
                 Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(palette.onSurfaceVariant)
             }
         }
@@ -326,8 +325,8 @@ struct FileTile: View {
         .onTapGesture(count: 2) { FileActions.open(file) }
         .simultaneousGesture(TapGesture().onEnded(select))
         .materialContextMenu {
-            Button("Open") { FileActions.open(file) }
-            Button("Show in Finder") { FileActions.reveal(file) }
+            MaterialMenuAction("Open") { FileActions.open(file) }
+            MaterialMenuAction("Show in Finder") { FileActions.reveal(file) }
         }
         .help(file.path)
     }

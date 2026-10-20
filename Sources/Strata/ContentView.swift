@@ -41,15 +41,6 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 250, ideal: 290, max: 360)
         } detail: {
             detailRoot
-                .overlay(alignment: .bottomTrailing) {
-                    if selection.isList {
-                        ExtendedFAB(title: "Find anything", symbol: "magnifyingglass", shortcut: "⌘K", compact: true) {
-                            withAnimation(Motion.standard) { quickFind.isOpen = true }
-                        }
-                        .padding(26)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
-                    }
-                }
         }
         .overlay {
             if quickFind.isOpen {
@@ -270,8 +261,8 @@ struct Sidebar: View {
                         ForEach(library.folders, id: \.self) { url in
                             row(.folder(url), url.lastPathComponent, "folder.fill", library.projectCount(in: url))
                                 .materialContextMenu {
-                                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                                    Button("Stop Watching", role: .destructive) { library.removeFolder(url) }
+                                    MaterialMenuAction("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                                    MaterialMenuAction("Stop Watching", role: .destructive) { library.removeFolder(url) }
                                 }
                         }
                         Button(action: addFolder) {
@@ -284,11 +275,11 @@ struct Sidebar: View {
                         Section("Favorites") {
                             ForEach(library.favoriteClients) { c in
                                 clientLabel(c).tag(SidebarItem.collection(c.id))
-                                    .materialContextMenu { Button("Remove from Favorites") { library.toggleFavorite(c) } }
+                                    .materialContextMenu { MaterialMenuAction("Remove from Favorites") { library.toggleFavorite(c) } }
                             }
                             ForEach(library.favoriteProjects) { p in
                                 projectLabel(p, small: false).tag(SidebarItem.project(p.id))
-                                    .materialContextMenu { Button("Remove from Favorites") { library.toggleFavorite(p) } }
+                                    .materialContextMenu { MaterialMenuAction("Remove from Favorites") { library.toggleFavorite(p) } }
                             }
                         }
                     }
@@ -311,12 +302,12 @@ struct Sidebar: View {
                                     .tag(SidebarItem.collection(client.id))
                                     .id(client.id)
                                     .materialContextMenu {
-                                        Button(library.isFavorite(client) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(client) }
-                                        Button("Rename…") { renamingClient = client }
-                                        Button("Merge into another client…") { mergingClient = client }
-                                        Button("Show in Finder") { FileActions.show(client) }
+                                        MaterialMenuAction(library.isFavorite(client) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(client) }
+                                        MaterialMenuAction("Rename…") { renamingClient = client }
+                                        MaterialMenuAction("Merge into another client…") { mergingClient = client }
+                                        MaterialMenuAction("Show in Finder") { FileActions.show(client) }
                                         Divider()
-                                        Button("Hide") { library.hide(client) }
+                                        MaterialMenuAction("Hide") { library.hide(client) }
                                     }
                                     .dropDestination(for: URL.self) { urls, _ in drop(urls, onClient: client) }
                             }
@@ -479,7 +470,7 @@ struct Sidebar: View {
         Label {
             Text(title).font(.system(size: 13, weight: .medium))
         } icon: {
-            Image(systemName: symbol).foregroundStyle(palette.primary)
+            Image(systemName: symbol).foregroundStyle(selection == value ? palette.primary : palette.onSurfaceVariant)
         }
         .badge(count)
         .tag(value)
@@ -492,7 +483,7 @@ struct Sidebar: View {
                 if let latest = client.latest { Thumbnail(file: latest, side: 64) }
             }
             .frame(width: 22, height: 22)
-            .clipShape(Cookie(lobes: 8, depth: 0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(client.name).font(.system(size: 13, weight: .semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Text("\(client.projects.count)")
@@ -517,16 +508,16 @@ struct Sidebar: View {
     }
 
     @ViewBuilder private func projectMenu(_ project: ProjectGroup) -> some View {
-        Button("Open latest version") { FileActions.open(project.latest.file) }
-        if let approved = project.approved { Button("Open approved (\(approved.file.status?.rawValue ?? ""))") { FileActions.open(approved.file) } }
-        Button(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
-        Button("Rename…") { renamingProject = project }
-        Button("Move to client…") { clientForProject = project }
+        MaterialMenuAction("Open latest version") { FileActions.open(project.latest.file) }
+        if let approved = project.approved { MaterialMenuAction("Open approved (\(approved.file.status?.rawValue ?? ""))") { FileActions.open(approved.file) } }
+        MaterialMenuAction(library.isFavorite(project) ? "Remove from Favorites" : "Add to Favorites") { library.toggleFavorite(project) }
+        MaterialMenuAction("Rename…") { renamingProject = project }
+        MaterialMenuAction("Move to client…") { clientForProject = project }
         if let client = library.collection(containing: project.id) {
-            Button("Remove from \(client.name)") { library.removeFromClient(project) }
+            MaterialMenuAction("Remove from \(client.name)") { library.removeFromClient(project) }
         }
         Divider()
-        Button("Show in Finder") { FileActions.show(project) }
+        MaterialMenuAction("Show in Finder") { FileActions.show(project) }
     }
 
     /// Dropping files (from Strata or Finder) onto a project files them as versions of it.

@@ -131,4 +131,4 @@ Signing uses `STRATA_SIGN_IDENTITY` or a locally available certificate, falling 
 
 ## License
 
-Strata's source code is available under the [MIT license](LICENSE). Screenshots illustrate the application; depicted third-party artwork, client marks, and trademarks retain their respective rights.
+Strata's source code is available under the [MIT license](LICENSE). Screenshot clients and projects are fictional; the abstract demonstration artwork was created for these screenshots.

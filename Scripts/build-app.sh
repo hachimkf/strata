@@ -24,6 +24,8 @@ APP=build/Strata.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Strata"
+# Remove debug symbol paths to the build machine before signing public downloads.
+strip -S "$APP/Contents/MacOS/Strata"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 printf 'APPL????' > "$APP/Contents/PkgInfo"

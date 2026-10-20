@@ -34,7 +34,7 @@ Built with SwiftUI and AppKit. Local indexing. No account required. Open for com
 
 ![Strata zoomable project timeline and version inspector](docs/screenshots/timeline.png)
 
-Screenshots show the running app. Artwork shown is demonstration content and is not included in the software license or downloads.
+Screenshots use an isolated demonstration library with fictional client names and purpose-made abstract artwork. None of the demonstration library is bundled with the app.
 
 ## Download and install
 
@@ -49,6 +49,8 @@ A `.pkg` installer is also available and is used by the in-app updater. Existing
 **Early community release:** the current distribution is not notarized by Apple. macOS may block first launch; only allow it through Privacy & Security if you trust this release, or build it from source. Preview support depends on the file format and macOS Quick Look providers; some files can show a generic icon. Grouping is heuristic and can need manual corrections. Strata tracks existing files; it does not create a backup or capture every save.
 
 ## Privacy and file safety
+
+Downloads contain only the application, its icon, and installer materials—no developer project files, watched folders, preferences, thumbnails, or library cache. Each installation indexes the current user’s selected folders locally.
 
 Your creative files stay on your Mac. Indexing and grouping run locally. There is no cloud account or file upload. Optional update checks contact GitHub; you can disable them in Settings.
 

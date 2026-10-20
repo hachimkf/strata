@@ -5,11 +5,11 @@
 #
 # 1. bumps CFBundleShortVersionString / CFBundleVersion in Resources/Info.plist
 # 2. runs the self-checks, builds a universal (Apple Silicon + Intel) app, signs it (hardened runtime)
-# 3. makes the installer build/Strata-<version>.pkg (+ .sha256, which the in-app updater verifies)
+# 3. makes DMG and PKG downloads with checksums (the updater uses the PKG)
 # 4. notarizes and staples when signed with a Developer ID and $STRATA_NOTARY_PROFILE is set
 #    (create once: xcrun notarytool store-credentials strata --apple-id … --team-id … )
 # 5. unless --local: commits, tags and pushes the source, then creates the GitHub release on
-#    hachimkf/strata-releases (public), which the app checks for updates.
+#    hachimkf/strata and hachimkf/strata-releases, which the app checks for updates.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -19,6 +19,7 @@ LOCAL=0
 for arg in "$@"; do [[ "$arg" == "--local" ]] && LOCAL=1; done
 [[ "$BUMP" == "--local" ]] && BUMP=patch
 
+SOURCE_REPO="hachimkf/strata"
 RELEASES_REPO="hachimkf/strata-releases"
 PLIST=Resources/Info.plist
 PB=/usr/libexec/PlistBuddy
@@ -45,6 +46,10 @@ swift build --product strata-selftest >/dev/null
 
 echo "▸ Universal build"
 Scripts/build-app.sh --universal
+
+echo "▸ Disk image"
+Scripts/make-dmg.sh
+DMG="build/Strata-$NEW.dmg"
 
 echo "▸ Installer package"
 Scripts/make-pkg.sh
@@ -84,6 +89,8 @@ git tag -f "v$NEW"
 git push -q origin HEAD
 git push -q -f origin "v$NEW"
 
+echo "▸ GitHub release on $SOURCE_REPO"
+gh release create "v$NEW" "$PKG" "$PKG.sha256" "$DMG" "$DMG.sha256.txt" --repo "$SOURCE_REPO" --title "Strata $NEW" --notes "$NOTES"
 echo "▸ GitHub release on $RELEASES_REPO"
-gh release create "v$NEW" "$PKG" "$PKG.sha256" --repo "$RELEASES_REPO" --title "Strata $NEW" --notes "$NOTES"
+gh release create "v$NEW" "$PKG" "$PKG.sha256" "$DMG" "$DMG.sha256.txt" --repo "$RELEASES_REPO" --title "Strata $NEW" --notes "$NOTES"
 echo "✓ Released Strata $NEW"

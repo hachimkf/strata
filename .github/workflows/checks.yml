@@ -1,0 +1,16 @@
+name: Swift checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run grouping and scanner checks
+        run: swift run strata-selftest
+      - name: Build the macOS app
+        run: swift build --product Strata
